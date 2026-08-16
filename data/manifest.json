@@ -1,0 +1,74 @@
+{
+  "coverage": "England",
+  "dataset_version": "gias-2026-08-16__onspd-2026-05",
+  "files": {
+    "postcodes.parquet": {
+      "bytes": 63168204,
+      "columns": [
+        "postcode",
+        "postcode_key",
+        "easting",
+        "northing",
+        "latitude",
+        "longitude",
+        "country_code",
+        "is_current",
+        "introduction_date",
+        "termination_date",
+        "source_release"
+      ],
+      "rows": 2270003,
+      "sha256": "84a89e69b4d68cc547d5af11aae9cd9b0dbff35c64ae94f3fee3fa8ba121ba09"
+    },
+    "schools.parquet": {
+      "bytes": 1875506,
+      "columns": [
+        "urn",
+        "school_name",
+        "sector",
+        "establishment_type",
+        "establishment_type_group",
+        "status",
+        "phase",
+        "low_age",
+        "high_age",
+        "gender",
+        "religious_character",
+        "admissions_policy",
+        "street",
+        "locality",
+        "address_3",
+        "town",
+        "county",
+        "postcode",
+        "postcode_key",
+        "website",
+        "telephone",
+        "easting",
+        "northing",
+        "source_date"
+      ],
+      "rows": 26508,
+      "sha256": "f88e56604e2372c631ca15c53b946c1c6e7ef30fa21dd422eb13004dc61be39f"
+    }
+  },
+  "generated_at": "2026-08-16T17:26:13.044549Z",
+  "schema_version": 2,
+  "sources": {
+    "gias": {
+      "download_url": "https://ea-edubase-api-prod.azurewebsites.net/edubase/downloads/public/edubasealldata20260816.csv",
+      "name": "Get Information About Schools",
+      "source_date": "2026-08-16"
+    },
+    "onspd": {
+      "arcgis_item_id": "6fff67d204fd4f339591ed667a6e3642",
+      "coverage": "Current and terminated postcodes in England",
+      "download_url": "https://www.arcgis.com/sharing/rest/content/items/6fff67d204fd4f339591ed667a6e3642/data",
+      "item_url": "https://www.arcgis.com/sharing/rest/content/items/6fff67d204fd4f339591ed667a6e3642",
+      "modified_at": "2026-06-04T09:13:00Z",
+      "name": "ONS Postcode Directory",
+      "release_date": "2026-05-01",
+      "title": "ONS Postcode Directory (May 2026)"
+    }
+  }
+}
