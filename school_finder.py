@@ -22,6 +22,8 @@ from urllib.parse import urljoin
 import pandas as pd
 import requests
 
+from school_models import SchoolResult, school_result_from_flat_record
+
 try:
     import pyarrow as pa
     import pyarrow.parquet as pq
@@ -1425,6 +1427,8 @@ def find_nearest_schools(
             "address",
             "town",
             "postcode",
+            "easting",
+            "northing",
             "urn",
             "website",
             "telephone",
@@ -1440,6 +1444,14 @@ def serialisable_records(frame: pd.DataFrame) -> list[dict[str, Any]]:
             records[column] = records[column].dt.strftime("%Y-%m-%d")
     records = records.astype(object).where(pd.notna(records), None)
     return records.to_dict(orient="records")
+
+
+def school_results_from_frame(frame: pd.DataFrame) -> list[SchoolResult]:
+    """Convert flat lookup rows into the application-facing data contract."""
+    return [
+        school_result_from_flat_record(record)
+        for record in serialisable_records(frame)
+    ]
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -1488,7 +1500,17 @@ def create_parser() -> argparse.ArgumentParser:
     lookup.add_argument("--entry-age", type=int, default=11)
     lookup.add_argument("--minimum-exit-age", type=int, default=16)
     lookup.add_argument("--include-special", action="store_true")
-    lookup.add_argument("--json", action="store_true")
+    output = lookup.add_mutually_exclusive_group()
+    output.add_argument(
+        "--json",
+        action="store_true",
+        help="Print the existing flat lookup rows as JSON.",
+    )
+    output.add_argument(
+        "--structured-json",
+        action="store_true",
+        help="Print nested SchoolResult objects used by the application layer.",
+    )
     return parser
 
 
@@ -1543,7 +1565,10 @@ def main() -> int:
             include_special=args.include_special,
         )
 
-        if args.json:
+        if args.structured_json:
+            payload = [result.to_dict() for result in school_results_from_frame(results)]
+            print(json.dumps(payload, indent=2, ensure_ascii=False))
+        elif args.json:
             print(json.dumps(serialisable_records(results), indent=2, ensure_ascii=False))
         else:
             print(
