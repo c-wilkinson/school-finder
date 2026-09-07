@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import csv
 import hashlib
+import html
 import io
 import json
 import os
@@ -16,6 +17,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterator
+from urllib.parse import urljoin
 
 import pandas as pd
 import requests
@@ -42,15 +44,30 @@ DEFAULT_DATA_DIR = Path("data")
 MANIFEST_FILENAME = "manifest.json"
 SCHOOLS_FILENAME = "schools.parquet"
 POSTCODES_FILENAME = "postcodes.parquet"
-MANIFEST_SCHEMA_VERSION = 2
+MANIFEST_SCHEMA_VERSION = 3
 GIAS_LOOKBACK_DAYS = 21
 ENGLAND_COUNTRY_CODE = "E92000001"
 METRES_PER_MILE = 1609.344
 HTTP_CHUNK_SIZE = 1024 * 1024
 PARQUET_ROW_GROUP_SIZE = 100_000
 
+OFSTED_MANAGEMENT_URL = (
+    "https://www.gov.uk/government/statistical-data-sets/"
+    "monthly-management-information-ofsteds-school-inspections-outcomes"
+)
+OFSTED_INDEPENDENT_URL = (
+    "https://www.gov.uk/government/statistical-data-sets/"
+    "non-association-independent-schools-inspections-and-outcomes-management-information"
+)
+EES_KS4_DATASET_ID = "19e39901-a96c-be76-b9c2-6af54ae076d2"
+EES_KS4_CSV_URL = (
+    "https://api.education.gov.uk/statistics/v1/data-sets/"
+    f"{EES_KS4_DATASET_ID}/csv"
+)
+QUALITY_MISSING_MARKERS = {"", "z", "x", "c", "na", "n/a", "null", "none"}
+
 USER_AGENT = (
-    "school-finder-prototype/0.4 "
+    "school-finder-prototype/0.5"
     "(public DfE and ONS data; local dataset builder)"
 )
 
@@ -204,6 +221,14 @@ class OnspdSource:
     item_url: str
     download_url: str
 
+
+
+
+@dataclass(frozen=True)
+class CsvSource:
+    name: str
+    url: str
+    release_label: str
 
 @dataclass(frozen=True)
 class BuildResult:
@@ -417,6 +442,223 @@ def discover_latest_onspd_source(
         )
 
     return max(candidates, key=lambda item: (item.release_date, item.modified_at))
+
+
+def discover_ofsted_csv(
+    session: requests.Session,
+    page_url: str,
+    *,
+    required_phrases: tuple[str, ...],
+    source_name: str,
+) -> CsvSource:
+    try:
+        response = session.get(page_url, timeout=(15, 60))
+        response.raise_for_status()
+    except requests.RequestException as exc:
+        raise SchoolFinderError(f"Could not retrieve {source_name}: {exc}") from exc
+
+    anchors = re.findall(
+        r'<a[^>]+href=["\'](?P<href>[^"\']+)["\'][^>]*>(?P<label>.*?)</a>',
+        response.text,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    for href, raw_label in anchors:
+        label = html.unescape(re.sub(r"<[^>]+>", " ", raw_label))
+        label = re.sub(r"\s+", " ", label).strip()
+        lowered = label.casefold()
+        if not all(phrase.casefold() in lowered for phrase in required_phrases):
+            continue
+        if not href.casefold().endswith(".csv"):
+            continue
+        return CsvSource(
+            name=source_name,
+            url=urljoin(page_url, href),
+            release_label=label,
+        )
+
+    raise SchoolFinderError(f"Could not discover the latest CSV for {source_name}.")
+
+
+def discover_latest_ofsted_source(session: requests.Session) -> CsvSource:
+    return discover_ofsted_csv(
+        session,
+        OFSTED_MANAGEMENT_URL,
+        required_phrases=("state-funded schools", "latest inspections as at"),
+        source_name="Ofsted state-funded school inspections",
+    )
+
+
+def discover_latest_independent_ofsted_source(session: requests.Session) -> CsvSource:
+    return discover_ofsted_csv(
+        session,
+        OFSTED_INDEPENDENT_URL,
+        required_phrases=("most recent inspections data as at",),
+        source_name="Ofsted non-association independent school inspections",
+    )
+
+def discover_ks4_source(session: requests.Session) -> CsvSource:
+    try:
+        response = session.get(EES_KS4_CSV_URL, stream=True, timeout=(15, 60))
+        response.raise_for_status()
+        response.close()
+    except requests.RequestException as exc:
+        raise SchoolFinderError(f"Could not retrieve DfE KS4 performance data: {exc}") from exc
+    return CsvSource(
+        name="DfE Key stage 4 performance",
+        url=EES_KS4_CSV_URL,
+        release_label=f"EES dataset {EES_KS4_DATASET_ID} (latest)",
+    )
+
+
+def download_quality_csv(session: requests.Session, source: CsvSource, destination: Path) -> None:
+    log(f"Downloading {source.name}...")
+    stream_download(session, source.url, destination, minimum_size=10_000)
+
+
+def _normalised_columns(frame: pd.DataFrame) -> dict[str, str]:
+    return {normalise_column_name(str(column)): str(column) for column in frame.columns}
+
+
+def _column(frame: pd.DataFrame, *names: str) -> str | None:
+    columns = _normalised_columns(frame)
+    for name in names:
+        found = columns.get(normalise_column_name(name))
+        if found:
+            return found
+    return None
+
+
+def _clean_text_series(series: pd.Series) -> pd.Series:
+    return series.fillna("").astype("string").str.strip()
+
+
+def _numeric_quality(series: pd.Series) -> pd.Series:
+    cleaned = _clean_text_series(series)
+    cleaned = cleaned.mask(cleaned.str.casefold().isin(QUALITY_MISSING_MARKERS))
+    return pd.to_numeric(cleaned, errors="coerce")
+
+
+def read_quality_csv(path: Path, source_name: str) -> pd.DataFrame:
+    """Read a public-data CSV whose publisher may use UTF-8 or Windows encodings."""
+    last_error: UnicodeDecodeError | None = None
+    for encoding in ("utf-8-sig", "cp1252", "latin-1"):
+        try:
+            return pd.read_csv(
+                path,
+                dtype=str,
+                encoding=encoding,
+                low_memory=False,
+            )
+        except UnicodeDecodeError as exc:
+            last_error = exc
+
+    raise SchoolFinderError(
+        f"Could not decode {source_name} CSV using UTF-8, Windows-1252 or Latin-1: "
+        f"{last_error}"
+    )
+
+
+def read_ofsted_quality(path: Path) -> pd.DataFrame:
+    frame = read_quality_csv(path, "Ofsted")
+    urn_col = _column(frame, "URN")
+    if urn_col is None:
+        raise SchoolFinderError("Ofsted CSV does not contain a URN column.")
+
+    result = pd.DataFrame({"urn": _clean_text_series(frame[urn_col])})
+    mappings = {
+        "ofsted_rating": ("Overall effectiveness", "Overall effectiveness grade"),
+        "ofsted_inspection_date": ("Inspection start date", "Inspection date"),
+        "ofsted_publication_date": ("Publication date",),
+        "ofsted_safeguarding": ("Safeguarding standards", "Safeguarding is effective?"),
+        "ofsted_inclusion": ("Inclusion",),
+        "ofsted_curriculum_teaching": ("Curriculum and teaching", "Quality of education"),
+        "ofsted_achievement": ("Achievement",),
+        "ofsted_attendance_behaviour": ("Attendance and behaviour", "Behaviour and attitudes"),
+        "ofsted_personal_development": ("Personal development and wellbeing", "Personal development"),
+        "ofsted_leadership": ("Leadership and governance", "Effectiveness of leadership and management"),
+    }
+    for output, aliases in mappings.items():
+        source_col = _column(frame, *aliases)
+        result[output] = _clean_text_series(frame[source_col]) if source_col else pd.NA
+
+    for date_col in ("ofsted_inspection_date", "ofsted_publication_date"):
+        result[date_col] = pd.to_datetime(result[date_col], errors="coerce", dayfirst=True)
+
+    result = result[result["urn"].ne("")].copy()
+    result = result.sort_values(
+        ["urn", "ofsted_publication_date", "ofsted_inspection_date"],
+        kind="stable",
+        na_position="first",
+    ).drop_duplicates("urn", keep="last")
+    return result.reset_index(drop=True)
+
+
+def read_ks4_quality(path: Path) -> pd.DataFrame:
+    frame = read_quality_csv(path, "DfE KS4")
+    urn_col = _column(frame, "school_urn", "URN")
+    time_col = _column(frame, "time_period")
+    if urn_col is None or time_col is None:
+        raise SchoolFinderError("DfE KS4 CSV is missing school_urn or time_period.")
+
+    total = pd.Series(True, index=frame.index)
+    for dimension in (
+        "breakdown_topic", "breakdown", "sex", "disadvantage_status",
+        "first_language", "prior_attainment", "mobility",
+    ):
+        col = _column(frame, dimension)
+        if col is not None:
+            total &= _clean_text_series(frame[col]).str.casefold().eq("total")
+    headline = frame[total].copy()
+    if headline.empty:
+        raise SchoolFinderError("DfE KS4 CSV contained no all-pupils headline rows.")
+
+    headline["_time_num"] = pd.to_numeric(headline[time_col], errors="coerce")
+    headline = headline.dropna(subset=["_time_num"])
+    latest_time = int(headline["_time_num"].max())
+    current = headline[headline["_time_num"] == latest_time].copy()
+
+    result = pd.DataFrame({
+        "urn": _clean_text_series(current[urn_col]),
+        "performance_year": _clean_text_series(current[time_col]),
+    })
+    metrics = {
+        "attainment8": "attainment8_average",
+        "english_maths_grade5_pct": "engmath_95_percent",
+        "english_maths_grade4_pct": "engmath_94_percent",
+        "ebacc_entry_pct": "ebacc_entering_percent",
+        "ebacc_aps": "ebacc_aps_average",
+    }
+    for output, source_name in metrics.items():
+        col = _column(current, source_name)
+        result[output] = _numeric_quality(current[col]) if col else pd.NA
+
+    progress_col = _column(headline, "progress8_average")
+    progress = pd.DataFrame(columns=["urn", "progress8", "progress8_year"])
+    if progress_col is not None:
+        p8 = headline[[urn_col, time_col, "_time_num", progress_col]].copy()
+        p8["progress8"] = _numeric_quality(p8[progress_col])
+        p8 = p8.dropna(subset=["progress8"]).sort_values(
+            [urn_col, "_time_num"], kind="stable"
+        ).drop_duplicates(urn_col, keep="last")
+        progress = pd.DataFrame({
+            "urn": _clean_text_series(p8[urn_col]),
+            "progress8": p8["progress8"].astype("float64"),
+            "progress8_year": _clean_text_series(p8[time_col]),
+        })
+
+    result = result[result["urn"].ne("")].drop_duplicates("urn", keep="last")
+    result = result.merge(progress, on="urn", how="left")
+    return result.reset_index(drop=True)
+
+
+def enrich_school_quality(
+    schools: pd.DataFrame,
+    ofsted: pd.DataFrame,
+    performance: pd.DataFrame,
+) -> pd.DataFrame:
+    enriched = schools.merge(ofsted, on="urn", how="left", validate="one_to_one")
+    enriched = enriched.merge(performance, on="urn", how="left", validate="one_to_one")
+    return enriched
 
 
 def download_gias_csv(
@@ -838,6 +1080,14 @@ def gias_manifest(source: GiasSource) -> dict[str, Any]:
     }
 
 
+def csv_source_manifest(source: CsvSource) -> dict[str, Any]:
+    return {
+        "name": source.name,
+        "release_label": source.release_label,
+        "download_url": source.url,
+    }
+
+
 def onspd_manifest(source: OnspdSource) -> dict[str, Any]:
     return {
         "name": "ONS Postcode Directory",
@@ -883,17 +1133,43 @@ def build_datasets(
         session,
         item_id_override=onspd_item_id,
     )
+    ofsted_source = discover_latest_ofsted_source(session)
+    independent_ofsted_source = discover_latest_independent_ofsted_source(session)
+    ks4_source = discover_ks4_source(session)
     gias_source_manifest = gias_manifest(gias_source)
     onspd_source_manifest = onspd_manifest(onspd_source)
+    ofsted_source_manifest = csv_source_manifest(ofsted_source)
+    independent_ofsted_source_manifest = csv_source_manifest(independent_ofsted_source)
+    ks4_source_manifest = csv_source_manifest(ks4_source)
 
     schools_current = (
         not force
         and schools_path.exists()
+        and existing_manifest is not None
+        and existing_manifest.get("schema_version") == MANIFEST_SCHEMA_VERSION
         and source_matches(
             existing_manifest,
             "gias",
             gias_source_manifest,
             ("source_date", "download_url"),
+        )
+        and source_matches(
+            existing_manifest,
+            "ofsted",
+            ofsted_source_manifest,
+            ("release_label", "download_url"),
+        )
+        and source_matches(
+            existing_manifest,
+            "ofsted_independent",
+            independent_ofsted_source_manifest,
+            ("release_label", "download_url"),
+        )
+        and source_matches(
+            existing_manifest,
+            "ks4_performance",
+            ks4_source_manifest,
+            ("release_label", "download_url"),
         )
     )
     postcodes_current = (
@@ -928,6 +1204,30 @@ def build_datasets(
             download_gias_csv(session, gias_source, gias_csv)
             log("Cleaning GIAS establishments...")
             schools = clean_gias_data(read_gias_csv(gias_csv), gias_source)
+
+            ofsted_csv = temp_dir / "ofsted.csv"
+            independent_ofsted_csv = temp_dir / "ofsted_independent.csv"
+            ks4_csv = temp_dir / "ks4_performance.csv"
+            download_quality_csv(session, ofsted_source, ofsted_csv)
+            download_quality_csv(session, independent_ofsted_source, independent_ofsted_csv)
+            download_quality_csv(session, ks4_source, ks4_csv)
+            log("Enriching schools with Ofsted and DfE performance data...")
+            ofsted = pd.concat(
+                [
+                    read_ofsted_quality(ofsted_csv),
+                    read_ofsted_quality(independent_ofsted_csv),
+                ],
+                ignore_index=True,
+            ).sort_values(
+                ["urn", "ofsted_publication_date", "ofsted_inspection_date"],
+                kind="stable",
+                na_position="first",
+            ).drop_duplicates("urn", keep="last")
+            schools = enrich_school_quality(
+                schools,
+                ofsted,
+                read_ks4_quality(ks4_csv),
+            )
             if len(schools) < 10_000:
                 raise SchoolFinderError(
                     f"GIAS produced only {len(schools):,} open establishments; "
@@ -968,6 +1268,9 @@ def build_datasets(
         "sources": {
             "gias": gias_source_manifest,
             "onspd": onspd_source_manifest,
+            "ofsted": ofsted_source_manifest,
+            "ofsted_independent": independent_ofsted_source_manifest,
+            "ks4_performance": ks4_source_manifest,
         },
     }
     log(f"Writing {manifest_path}...")
@@ -1101,6 +1404,24 @@ def find_nearest_schools(
             "gender",
             "religious_character",
             "admissions_policy",
+            "ofsted_rating",
+            "ofsted_inspection_date",
+            "ofsted_publication_date",
+            "ofsted_safeguarding",
+            "ofsted_inclusion",
+            "ofsted_curriculum_teaching",
+            "ofsted_achievement",
+            "ofsted_attendance_behaviour",
+            "ofsted_personal_development",
+            "ofsted_leadership",
+            "performance_year",
+            "attainment8",
+            "english_maths_grade5_pct",
+            "english_maths_grade4_pct",
+            "ebacc_entry_pct",
+            "ebacc_aps",
+            "progress8",
+            "progress8_year",
             "address",
             "town",
             "postcode",
@@ -1236,6 +1557,11 @@ def main() -> int:
                     "sector",
                     "establishment_type",
                     "age_range",
+                    "ofsted_rating",
+                    "ofsted_inspection_date",
+                    "attainment8",
+                    "progress8",
+                    "progress8_year",
                     "town",
                     "postcode",
                     "urn",
