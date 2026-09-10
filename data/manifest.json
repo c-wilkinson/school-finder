@@ -3,11 +3,10 @@
   "dataset_version": "gias-2026-09-10__onspd-2026-08",
   "files": {
     "benchmarks.parquet": {
-      "bytes": 13634,
+      "bytes": 59262,
       "columns": [
         "benchmark_level",
         "benchmark_code",
-        "benchmark_name",
         "performance_year",
         "attainment8",
         "english_maths_grade5_pct",
@@ -17,10 +16,47 @@
         "progress8",
         "progress8_year",
         "source",
-        "source_dataset_id"
+        "source_dataset_id",
+        "attendance_year",
+        "attendance_enrolments",
+        "overall_absence_pct",
+        "authorised_absence_pct",
+        "unauthorised_absence_pct",
+        "persistent_absence_pct",
+        "severe_absence_pct",
+        "attendance_source",
+        "attendance_source_dataset_id",
+        "behaviour_year",
+        "behaviour_pupil_headcount",
+        "suspension_count",
+        "suspension_rate",
+        "pupils_with_one_or_more_suspension",
+        "pupils_with_one_or_more_suspension_rate",
+        "permanent_exclusion_count",
+        "permanent_exclusion_rate",
+        "behaviour_source",
+        "behaviour_source_dataset_id",
+        "workforce_year",
+        "teacher_fte",
+        "classroom_teacher_fte",
+        "teaching_assistant_fte",
+        "support_staff_fte",
+        "teachers_without_qts_fte",
+        "part_time_teacher_pct",
+        "workforce_source",
+        "workforce_source_dataset_id",
+        "workforce_ratio_year",
+        "pupil_fte",
+        "qualified_teacher_fte",
+        "pupil_qualified_teacher_ratio",
+        "pupil_teacher_ratio",
+        "pupil_adult_ratio",
+        "workforce_ratio_source",
+        "workforce_ratio_source_dataset_id",
+        "benchmark_name"
       ],
-      "rows": 153,
-      "sha256": "e5f7619a59c079b9579f3672211d8cc0a43df394fe8e987a3c60ca397fbee4fc"
+      "rows": 155,
+      "sha256": "7b35e5a1765fb1afe47e04abca726827e85f2f293703feb5f0bd97194b2573e6"
     },
     "postcodes.parquet": {
       "bytes": 63252765,
@@ -41,7 +77,7 @@
       "sha256": "a2fdc3559da5b49464b6f84c02158d241dd9592561931e62adc81cd012539aee"
     },
     "schools.parquet": {
-      "bytes": 2519964,
+      "bytes": 4903758,
       "columns": [
         "urn",
         "school_name",
@@ -96,15 +132,83 @@
         "progress8_source_urn",
         "progress8_source_school_name",
         "progress8_source_kind",
-        "progress8_source_link_depth"
+        "progress8_source_link_depth",
+        "attendance_year",
+        "attendance_enrolments",
+        "overall_absence_pct",
+        "authorised_absence_pct",
+        "unauthorised_absence_pct",
+        "persistent_absence_pct",
+        "severe_absence_pct",
+        "attendance_source",
+        "attendance_source_dataset_id",
+        "attendance_source_urn",
+        "attendance_source_school_name",
+        "attendance_source_kind",
+        "attendance_source_link_depth",
+        "behaviour_year",
+        "behaviour_pupil_headcount",
+        "suspension_count",
+        "suspension_rate",
+        "pupils_with_one_or_more_suspension",
+        "pupils_with_one_or_more_suspension_rate",
+        "permanent_exclusion_count",
+        "permanent_exclusion_rate",
+        "behaviour_source",
+        "behaviour_source_dataset_id",
+        "behaviour_source_urn",
+        "behaviour_source_school_name",
+        "behaviour_source_kind",
+        "behaviour_source_link_depth",
+        "workforce_year",
+        "workforce_ratio_year",
+        "pupil_fte",
+        "teacher_fte",
+        "qualified_teacher_fte",
+        "classroom_teacher_fte",
+        "teaching_assistant_fte",
+        "support_staff_fte",
+        "teachers_without_qts_fte",
+        "part_time_teacher_pct",
+        "pupil_qualified_teacher_ratio",
+        "pupil_teacher_ratio",
+        "pupil_adult_ratio",
+        "workforce_source",
+        "workforce_source_dataset_id",
+        "workforce_ratio_source",
+        "workforce_ratio_source_dataset_id",
+        "workforce_source_urn",
+        "workforce_source_school_name",
+        "workforce_source_kind",
+        "workforce_source_link_depth"
       ],
       "rows": 26482,
-      "sha256": "c5347e2c123f097d255ba22362b5a63b5147e782e8c0edf5d44a4a3c9b7f9761"
+      "sha256": "9ff8696e25af6d538e870ed3c1bc169d75293ab2d9eb94a655b7fc463a6d821e"
     }
   },
-  "generated_at": "2026-09-10T12:04:45.322838Z",
-  "schema_version": 6,
+  "generated_at": "2026-09-10T14:32:55.222094Z",
+  "schema_version": 7,
   "sources": {
+    "attendance_benchmarks": {
+      "download_url": "https://explore-education-statistics.service.gov.uk/data-catalogue/data-set/d37f27c4-cca2-4274-97e9-1cdcb4ecad18/csv",
+      "name": "DfE pupil absence benchmarks",
+      "release_label": "EES dataset d37f27c4-cca2-4274-97e9-1cdcb4ecad18 (2024/25 full academic year)"
+    },
+    "attendance_school": {
+      "download_url": "https://explore-education-statistics.service.gov.uk/data-catalogue/data-set/889f9166-e3bf-4d3a-afb2-d86e4aecc70a/csv",
+      "name": "DfE pupil absence - school level",
+      "release_label": "EES dataset 889f9166-e3bf-4d3a-afb2-d86e4aecc70a (2024/25 full academic year)"
+    },
+    "behaviour_benchmarks": {
+      "download_url": "https://explore-education-statistics.service.gov.uk/data-catalogue/data-set/59d8b51e-fea6-40f5-911a-0d916679d206/csv",
+      "name": "DfE suspensions and permanent exclusions benchmarks",
+      "release_label": "EES dataset 59d8b51e-fea6-40f5-911a-0d916679d206 (2024/25 academic year)"
+    },
+    "behaviour_school": {
+      "download_url": "https://explore-education-statistics.service.gov.uk/data-catalogue/data-set/a4b5a46f-5bed-42b5-91b8-93620a04001e/csv",
+      "name": "DfE suspensions and permanent exclusions - school level",
+      "release_label": "EES dataset a4b5a46f-5bed-42b5-91b8-93620a04001e (2024/25 academic year)"
+    },
     "gias": {
       "download_url": "https://ea-edubase-api-prod.azurewebsites.net/edubase/downloads/public/edubasealldata20260910.csv",
       "name": "Get Information About Schools",
@@ -149,6 +253,26 @@
       "name": "ONS Postcode Directory",
       "release_date": "2026-08-01",
       "title": "ONS Postcode Directory (August 2026)"
+    },
+    "workforce_benchmarks": {
+      "download_url": "https://explore-education-statistics.service.gov.uk/data-catalogue/data-set/47006239-5f46-4c97-8ae0-38fd288d1c1e/csv",
+      "name": "DfE school workforce benchmarks",
+      "release_label": "EES dataset 47006239-5f46-4c97-8ae0-38fd288d1c1e (reporting year 2025)"
+    },
+    "workforce_ratio_benchmarks": {
+      "download_url": "https://explore-education-statistics.service.gov.uk/data-catalogue/data-set/3682ab8e-9e55-4a99-8af2-be965ddfe43b/csv",
+      "name": "DfE pupil to teacher ratio benchmarks",
+      "release_label": "EES dataset 3682ab8e-9e55-4a99-8af2-be965ddfe43b (reporting year 2025)"
+    },
+    "workforce_ratio_school": {
+      "download_url": "https://explore-education-statistics.service.gov.uk/data-catalogue/data-set/d5f1867a-ca93-454d-9361-6c64df108872/csv",
+      "name": "DfE pupil to teacher ratios - school level",
+      "release_label": "EES dataset d5f1867a-ca93-454d-9361-6c64df108872 (reporting year 2025)"
+    },
+    "workforce_school": {
+      "download_url": "https://explore-education-statistics.service.gov.uk/data-catalogue/data-set/cce5e2fe-b6eb-4741-9199-21afa08fb97a/csv",
+      "name": "DfE school workforce - school level",
+      "release_label": "EES dataset cce5e2fe-b6eb-4741-9199-21afa08fb97a (reporting year 2025)"
     }
   }
 }

@@ -7,13 +7,13 @@ MANIFEST_FILENAME = "manifest.json"
 SCHOOLS_FILENAME = "schools.parquet"
 POSTCODES_FILENAME = "postcodes.parquet"
 BENCHMARKS_FILENAME = "benchmarks.parquet"
-MANIFEST_SCHEMA_VERSION = 6
+MANIFEST_SCHEMA_VERSION = 7
 
 METRES_PER_MILE = 1609.344
 HTTP_CHUNK_SIZE = 1024 * 1024
 PARQUET_ROW_GROUP_SIZE = 100_000
 
 USER_AGENT = (
-    "school-finder-prototype/0.4 "
+    "school-finder-prototype/0.5 "
     "(public DfE and ONS data; local dataset builder)"
 )

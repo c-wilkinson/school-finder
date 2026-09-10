@@ -21,6 +21,14 @@ def _sources(monkeypatch):
     independent = CsvSource("Independent Ofsted", "ind-url", "ind-release")
     ks4 = CsvSource("KS4", "ks4-url", "ks4-release")
     ks4_benchmarks = CsvSource("KS4 benchmarks", "bench-url", "bench-release")
+    attendance = CsvSource("Attendance", "attendance-url", "attendance-release")
+    attendance_benchmarks = CsvSource("Attendance benchmarks", "attendance-bench-url", "attendance-bench-release")
+    behaviour = CsvSource("Behaviour", "behaviour-url", "behaviour-release")
+    behaviour_benchmarks = CsvSource("Behaviour benchmarks", "behaviour-bench-url", "behaviour-bench-release")
+    workforce = CsvSource("Workforce", "workforce-url", "workforce-release")
+    workforce_ratios = CsvSource("Workforce ratios", "workforce-ratio-url", "workforce-ratio-release")
+    workforce_benchmarks = CsvSource("Workforce benchmarks", "workforce-bench-url", "workforce-bench-release")
+    workforce_ratio_benchmarks = CsvSource("Workforce ratio benchmarks", "workforce-ratio-bench-url", "workforce-ratio-bench-release")
     monkeypatch.setattr(build, "create_session", lambda: object())
     monkeypatch.setattr(build, "discover_latest_gias_source", lambda session: gias)
     monkeypatch.setattr(build, "discover_latest_gias_links_source", lambda session, today=None: gias_links)
@@ -29,8 +37,16 @@ def _sources(monkeypatch):
     monkeypatch.setattr(build, "discover_latest_legacy_ofsted_source", lambda session: legacy_ofsted)
     monkeypatch.setattr(build, "discover_latest_independent_ofsted_source", lambda session: independent)
     monkeypatch.setattr(build, "discover_ks4_source", lambda session: ks4)
+    monkeypatch.setattr(build, "discover_attendance_school_source", lambda session: attendance)
+    monkeypatch.setattr(build, "discover_behaviour_school_source", lambda session: behaviour)
+    monkeypatch.setattr(build, "discover_workforce_school_source", lambda session: workforce)
+    monkeypatch.setattr(build, "discover_workforce_ratio_school_source", lambda session: workforce_ratios)
     monkeypatch.setattr(build, "discover_ks4_benchmark_source", lambda session: ks4_benchmarks)
-    return gias, gias_links, onspd, ofsted, legacy_ofsted, independent, ks4, ks4_benchmarks
+    monkeypatch.setattr(build, "discover_attendance_benchmark_source", lambda session: attendance_benchmarks)
+    monkeypatch.setattr(build, "discover_behaviour_benchmark_source", lambda session: behaviour_benchmarks)
+    monkeypatch.setattr(build, "discover_workforce_benchmark_source", lambda session: workforce_benchmarks)
+    monkeypatch.setattr(build, "discover_workforce_ratio_benchmark_source", lambda session: workforce_ratio_benchmarks)
+    return (gias, gias_links, onspd, ofsted, legacy_ofsted, independent, ks4, ks4_benchmarks)
 
 
 def _disable_pyarrow_guard(monkeypatch):
@@ -40,6 +56,27 @@ def _disable_pyarrow_guard(monkeypatch):
 def _fake_parquet_writes(monkeypatch):
     monkeypatch.setattr(build, "write_parquet_file", lambda frame, path: path.write_bytes(b"parquet"))
     monkeypatch.setattr(build, "parquet_metadata", lambda path: {"rows":1, "bytes":path.stat().st_size, "sha256":"hash", "columns":["x"]})
+
+
+def _mock_context_readers(monkeypatch):
+    monkeypatch.setattr(build, "read_attendance_school", lambda path: pd.DataFrame(columns=["urn", *build.ATTENDANCE_COLUMNS]))
+    monkeypatch.setattr(build, "read_behaviour_school", lambda path: pd.DataFrame(columns=["urn", *build.BEHAVIOUR_COLUMNS]))
+    monkeypatch.setattr(build, "read_workforce_school", lambda *paths: pd.DataFrame(columns=["urn", *build.WORKFORCE_COLUMNS]))
+    monkeypatch.setattr(
+        build,
+        "read_attendance_benchmarks",
+        lambda path: pd.DataFrame([{"benchmark_level": "National", "benchmark_code": "E92000001", "benchmark_name": "England"}]),
+    )
+    monkeypatch.setattr(
+        build,
+        "read_behaviour_benchmarks",
+        lambda path: pd.DataFrame([{"benchmark_level": "National", "benchmark_code": "E92000001", "benchmark_name": "England"}]),
+    )
+    monkeypatch.setattr(
+        build,
+        "read_workforce_benchmarks",
+        lambda *paths: pd.DataFrame([{"benchmark_level": "National", "benchmark_code": "E92000001", "benchmark_name": "England"}]),
+    )
 
 
 def test_enrich_school_quality_joins_by_urn_without_dropping_schools():
@@ -121,6 +158,7 @@ def test_combine_ofsted_quality_prefers_newer_current_inspection():
 def test_build_returns_unchanged_when_every_source_is_current(tmp_path, monkeypatch):
     _disable_pyarrow_guard(monkeypatch)
     _sources(monkeypatch)
+    _mock_context_readers(monkeypatch)
     (tmp_path / "schools.parquet").touch()
     (tmp_path / "postcodes.parquet").touch()
     (tmp_path / "benchmarks.parquet").touch()
@@ -134,6 +172,7 @@ def test_build_returns_unchanged_when_every_source_is_current(tmp_path, monkeypa
 def test_build_force_rebuilds_and_publishes_both_datasets(tmp_path, monkeypatch):
     _disable_pyarrow_guard(monkeypatch)
     _sources(monkeypatch)
+    _mock_context_readers(monkeypatch)
     _fake_parquet_writes(monkeypatch)
     monkeypatch.setattr(build, "read_manifest", lambda path: None)
     monkeypatch.setattr(build, "download_gias_csv", lambda *a, **k: None)
@@ -150,7 +189,7 @@ def test_build_force_rebuilds_and_publishes_both_datasets(tmp_path, monkeypatch)
     monkeypatch.setattr(
         build,
         "read_ks4_benchmarks",
-        lambda path: pd.DataFrame([{"benchmark_level": "National", "benchmark_code": "E92000001"}]),
+        lambda path: pd.DataFrame([{"benchmark_level": "National", "benchmark_code": "E92000001", "benchmark_name": "England"}]),
     )
     monkeypatch.setattr(build, "download_onspd_zip", lambda *a, **k: None)
     monkeypatch.setattr(build, "clean_onspd_data", lambda path, source: pd.DataFrame({"postcode_key":["RG226SX"]}))
@@ -175,6 +214,7 @@ def test_build_force_rebuilds_and_publishes_both_datasets(tmp_path, monkeypatch)
 def test_build_only_refreshes_postcodes_when_school_sources_are_current(tmp_path, monkeypatch):
     _disable_pyarrow_guard(monkeypatch)
     _sources(monkeypatch)
+    _mock_context_readers(monkeypatch)
     _fake_parquet_writes(monkeypatch)
     (tmp_path / "schools.parquet").write_bytes(b"existing")
     (tmp_path / "postcodes.parquet").write_bytes(b"old")
@@ -196,6 +236,7 @@ def test_build_only_refreshes_postcodes_when_school_sources_are_current(tmp_path
 def test_build_only_refreshes_schools_when_postcodes_are_current(tmp_path, monkeypatch):
     _disable_pyarrow_guard(monkeypatch)
     _sources(monkeypatch)
+    _mock_context_readers(monkeypatch)
     _fake_parquet_writes(monkeypatch)
     (tmp_path / "schools.parquet").write_bytes(b"old")
     (tmp_path / "postcodes.parquet").write_bytes(b"existing")
@@ -205,7 +246,7 @@ def test_build_only_refreshes_schools_when_postcodes_are_current(tmp_path, monke
     monkeypatch.setattr(
         build,
         "source_matches",
-        lambda manifest, name, expected, keys: name in {"onspd", "ks4_benchmarks"},
+        lambda manifest, name, expected, keys: name in {"onspd", "ks4_benchmarks", "attendance_benchmarks", "behaviour_benchmarks", "workforce_benchmarks", "workforce_ratio_benchmarks"},
     )
     monkeypatch.setattr(build, "download_gias_csv", lambda *a, **k: None)
     monkeypatch.setattr(build, "download_gias_links_csv", lambda *a, **k: None)
@@ -228,6 +269,7 @@ def test_build_only_refreshes_schools_when_postcodes_are_current(tmp_path, monke
 def test_build_rejects_implausibly_small_gias_result(tmp_path, monkeypatch):
     _disable_pyarrow_guard(monkeypatch)
     _sources(monkeypatch)
+    _mock_context_readers(monkeypatch)
     monkeypatch.setattr(build, "read_manifest", lambda path: None)
     monkeypatch.setattr(build, "download_gias_csv", lambda *a, **k: None)
     monkeypatch.setattr(build, "download_gias_links_csv", lambda *a, **k: None)
@@ -245,6 +287,7 @@ def test_build_rejects_implausibly_small_gias_result(tmp_path, monkeypatch):
 def test_build_only_refreshes_benchmarks_when_other_datasets_are_current(tmp_path, monkeypatch):
     _disable_pyarrow_guard(monkeypatch)
     _sources(monkeypatch)
+    _mock_context_readers(monkeypatch)
     _fake_parquet_writes(monkeypatch)
     (tmp_path / "schools.parquet").write_bytes(b"schools")
     (tmp_path / "postcodes.parquet").write_bytes(b"postcodes")
@@ -260,7 +303,7 @@ def test_build_only_refreshes_benchmarks_when_other_datasets_are_current(tmp_pat
     monkeypatch.setattr(
         build,
         "read_ks4_benchmarks",
-        lambda path: pd.DataFrame([{"benchmark_level": "National", "benchmark_code": "E92000001"}]),
+        lambda path: pd.DataFrame([{"benchmark_level": "National", "benchmark_code": "E92000001", "benchmark_name": "England"}]),
     )
 
     result = build.build_datasets(tmp_path)
@@ -278,6 +321,7 @@ def test_build_only_refreshes_benchmarks_when_other_datasets_are_current(tmp_pat
 def test_build_rejects_empty_benchmark_result(tmp_path, monkeypatch):
     _disable_pyarrow_guard(monkeypatch)
     _sources(monkeypatch)
+    _mock_context_readers(monkeypatch)
     (tmp_path / "schools.parquet").touch()
     (tmp_path / "postcodes.parquet").touch()
     monkeypatch.setattr(build, "read_manifest", lambda path: {"schema_version": MANIFEST_SCHEMA_VERSION, "sources": {}})
@@ -288,6 +332,9 @@ def test_build_rejects_empty_benchmark_result(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(build, "download_csv", lambda *a, **k: None)
     monkeypatch.setattr(build, "read_ks4_benchmarks", lambda path: pd.DataFrame())
+    monkeypatch.setattr(build, "read_attendance_benchmarks", lambda path: pd.DataFrame())
+    monkeypatch.setattr(build, "read_behaviour_benchmarks", lambda path: pd.DataFrame())
+    monkeypatch.setattr(build, "read_workforce_benchmarks", lambda *paths: pd.DataFrame())
 
     with pytest.raises(SchoolFinderError, match="no usable benchmark rows"):
         build.build_datasets(tmp_path)
@@ -536,3 +583,164 @@ def test_enrich_school_quality_resolves_progress8_lineage_without_overwriting_cu
     assert result["attainment8"] == 52.0
     assert result["progress8"] == -0.25
     assert result["progress8_source_kind"] == "predecessor"
+
+
+def test_resolve_domain_lineage_prefers_current_row_and_preserves_whole_domain():
+    schools = pd.DataFrame([{"urn": "2", "school_name": "Current"}])
+    links = pd.DataFrame([
+        {"successor_urn": "2", "predecessor_urn": "1", "predecessor_name": "Old"}
+    ])
+    data = pd.DataFrame([
+        {"urn": "1", "value": 99.0, "other": 50.0},
+        {"urn": "2", "value": 10.0, "other": pd.NA},
+    ])
+    result = build.resolve_domain_lineage(
+        schools,
+        links,
+        data,
+        data_columns=("value", "other"),
+        quality_columns=("value",),
+        source_prefix="example",
+    ).iloc[0]
+    assert result["value"] == 10.0
+    assert pd.isna(result["other"])
+    assert result["example_source_urn"] == "2"
+    assert result["example_source_school_name"] == "Current"
+    assert result["example_source_kind"] == "current"
+    assert result["example_source_link_depth"] == 0
+
+
+def test_resolve_domain_lineage_inherits_unambiguous_predecessor_and_walks_chain():
+    schools = pd.DataFrame([{"urn": "3", "school_name": "Current"}])
+    links = pd.DataFrame([
+        {"successor_urn": "", "predecessor_urn": "9", "predecessor_name": "Ignored"},
+        {"successor_urn": "3", "predecessor_urn": "2", "predecessor_name": "Middle"},
+        {"successor_urn": "3", "predecessor_urn": "2", "predecessor_name": "Middle"},
+        {"successor_urn": "2", "predecessor_urn": "1", "predecessor_name": "Original"},
+    ])
+    data = pd.DataFrame([
+        {"urn": "", "value": 1.0},
+        {"urn": "2", "value": pd.NA},
+        {"urn": "1", "value": 42.0},
+    ])
+    result = build.resolve_domain_lineage(
+        schools,
+        links,
+        data,
+        data_columns=("value",),
+        quality_columns=("value",),
+        source_prefix="example",
+    ).iloc[0]
+    assert result["value"] == 42.0
+    assert result["example_source_urn"] == "1"
+    assert result["example_source_school_name"] == "Original"
+    assert result["example_source_kind"] == "predecessor"
+    assert result["example_source_link_depth"] == 2
+
+
+def test_resolve_domain_lineage_does_not_guess_mergers_or_cycles():
+    schools = pd.DataFrame([
+        {"urn": "3", "school_name": "Merged"},
+        {"urn": "6", "school_name": "Cycle"},
+    ])
+    links = pd.DataFrame([
+        {"successor_urn": "3", "predecessor_urn": "1", "predecessor_name": "One"},
+        {"successor_urn": "3", "predecessor_urn": "2", "predecessor_name": "Two"},
+        {"successor_urn": "6", "predecessor_urn": "5", "predecessor_name": "Five"},
+        {"successor_urn": "5", "predecessor_urn": "6", "predecessor_name": "Cycle"},
+    ])
+    data = pd.DataFrame([{"urn": "1", "value": 1.0}, {"urn": "2", "value": 2.0}])
+    result = build.resolve_domain_lineage(
+        schools,
+        links,
+        data,
+        data_columns=("value",),
+        quality_columns=("value",),
+        source_prefix="example",
+    ).set_index("urn")
+    assert pd.isna(result.loc["3", "value"])
+    assert result.loc["3", "example_source_kind"] is None
+    assert pd.isna(result.loc["6", "value"])
+
+
+def test_resolve_domain_lineage_handles_no_links_and_no_data():
+    schools = pd.DataFrame([{"urn": "1", "school_name": "Current"}])
+    result = build.resolve_domain_lineage(
+        schools,
+        pd.DataFrame(),
+        pd.DataFrame(columns=["urn", "value"]),
+        data_columns=("value",),
+        quality_columns=("value",),
+        source_prefix="example",
+    ).iloc[0]
+    assert pd.isna(result["value"])
+    assert result["example_source_urn"] is None
+    assert build._has_domain_quality(None, ("value",)) is False
+
+
+def test_combine_benchmarks_outer_joins_domains_and_orders_national_first():
+    ks4 = pd.DataFrame([
+        {"benchmark_level": "Local authority", "benchmark_code": "LA1", "benchmark_name": "Alpha", "attainment8": 50},
+        {"benchmark_level": "National", "benchmark_code": "ENG", "benchmark_name": "England", "attainment8": 46},
+    ])
+    attendance = pd.DataFrame([
+        {"benchmark_level": "National", "benchmark_code": "ENG", "benchmark_name": "England", "overall_absence_pct": 7},
+        {"benchmark_level": "Local authority", "benchmark_code": "LA2", "benchmark_name": "Beta", "overall_absence_pct": 8},
+    ])
+    result = build.combine_benchmarks(ks4, attendance)
+    assert result["benchmark_name"].tolist() == ["England", "Alpha", "Beta"]
+    assert result.set_index("benchmark_code").loc["ENG", "attainment8"] == 46
+    assert result.set_index("benchmark_code").loc["ENG", "overall_absence_pct"] == 7
+    assert build.combine_benchmarks().columns.tolist() == [
+        "benchmark_level", "benchmark_code", "benchmark_name"
+    ]
+
+
+def test_enrich_school_context_maps_all_three_domains_with_lineage():
+    schools = pd.DataFrame([{"urn": "2", "school_name": "Current"}])
+    links = pd.DataFrame([
+        {"successor_urn": "2", "predecessor_urn": "1", "predecessor_name": "Old"}
+    ])
+    attendance = pd.DataFrame([{
+        "urn": "1", "attendance_enrolments": 100, "overall_absence_pct": 7.0,
+        **{c: pd.NA for c in build.ATTENDANCE_COLUMNS if c not in {"attendance_enrolments", "overall_absence_pct"}},
+    }])
+    behaviour = pd.DataFrame([{
+        "urn": "2", "behaviour_pupil_headcount": 100, "suspension_count": 5,
+        **{c: pd.NA for c in build.BEHAVIOUR_COLUMNS if c not in {"behaviour_pupil_headcount", "suspension_count"}},
+    }])
+    workforce = pd.DataFrame([{
+        "urn": "2", "pupil_fte": 100.0, "teacher_fte": 10.0,
+        **{c: pd.NA for c in build.WORKFORCE_COLUMNS if c not in {"pupil_fte", "teacher_fte"}},
+    }])
+    result = build.enrich_school_context(
+        schools, attendance, behaviour, workforce, links=links
+    ).iloc[0]
+    assert result["overall_absence_pct"] == 7.0
+    assert result["attendance_source_kind"] == "predecessor"
+    assert result["suspension_count"] == 5
+    assert result["behaviour_source_kind"] == "current"
+    assert result["teacher_fte"] == 10.0
+    assert result["workforce_source_kind"] == "current"
+
+
+def test_enrich_school_context_without_lineage_joins_raw_domain_rows():
+    schools = pd.DataFrame([{"urn": "1"}])
+    attendance = pd.DataFrame([{"urn": "1", "overall_absence_pct": 7.0}])
+    behaviour = pd.DataFrame([{"urn": "1", "suspension_rate": 10.0}])
+    workforce = pd.DataFrame([{"urn": "1", "pupil_teacher_ratio": 16.0}])
+    result = build.enrich_school_context(schools, attendance, behaviour, workforce).iloc[0]
+    assert result["overall_absence_pct"] == 7.0
+    assert result["suspension_rate"] == 10.0
+    assert result["pupil_teacher_ratio"] == 16.0
+
+
+def test_lineage_graph_accepts_valid_edge_without_predecessor_name():
+    schools = pd.DataFrame([{"urn": "2", "school_name": "Current"}])
+    links = pd.DataFrame([
+        {"successor_urn": "2", "predecessor_urn": "1", "predecessor_name": ""}
+    ])
+    predecessors, predecessor_names, current_names = build._lineage_graph(schools, links)
+    assert predecessors == {"2": ["1"]}
+    assert predecessor_names == {}
+    assert current_names == {"2": "Current"}

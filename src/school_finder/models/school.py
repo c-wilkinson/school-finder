@@ -86,44 +86,79 @@ class InspectionSummary:
 
 @dataclass(frozen=True, slots=True)
 class AttendanceStatistics:
+    enrolments: int | None = None
     overall_absence_pct: float | None = None
+    authorised_absence_pct: float | None = None
+    unauthorised_absence_pct: float | None = None
     persistent_absence_pct: float | None = None
+    severe_absence_pct: float | None = None
     data_year: str | None = None
+    source: str | None = None
+    source_dataset_id: str | None = None
+    source_urn: str | None = None
+    source_school_name: str | None = None
+    source_kind: str | None = None
+    source_link_depth: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class BehaviourStatistics:
+    pupil_headcount: int | None = None
     suspension_count: int | None = None
-    suspension_pct: float | None = None
+    suspension_rate: float | None = None
+    pupils_with_one_or_more_suspension: int | None = None
+    pupils_with_one_or_more_suspension_rate: float | None = None
     permanent_exclusion_count: int | None = None
-    permanent_exclusion_pct: float | None = None
+    permanent_exclusion_rate: float | None = None
     data_year: str | None = None
+    source: str | None = None
+    source_dataset_id: str | None = None
+    source_urn: str | None = None
+    source_school_name: str | None = None
+    source_kind: str | None = None
+    source_link_depth: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class WorkforceStatistics:
-    pupil_headcount: int | None = None
-    teacher_headcount: float | None = None
-    classroom_teacher_headcount: float | None = None
-    teaching_assistant_headcount: float | None = None
+    pupil_fte: float | None = None
+    teacher_fte: float | None = None
+    qualified_teacher_fte: float | None = None
+    classroom_teacher_fte: float | None = None
+    teaching_assistant_fte: float | None = None
+    support_staff_fte: float | None = None
+    teachers_without_qts_fte: float | None = None
+    part_time_teacher_pct: float | None = None
+    pupil_qualified_teacher_ratio: float | None = None
+    pupil_teacher_ratio: float | None = None
+    pupil_adult_ratio: float | None = None
     data_year: str | None = None
+    ratio_year: str | None = None
+    source: str | None = None
+    source_dataset_id: str | None = None
+    ratio_source: str | None = None
+    ratio_source_dataset_id: str | None = None
+    source_urn: str | None = None
+    source_school_name: str | None = None
+    source_kind: str | None = None
+    source_link_depth: int | None = None
 
     @property
     def pupils_per_classroom_teacher(self) -> float | None:
-        if not self.pupil_headcount or not self.classroom_teacher_headcount:
+        if not self.pupil_fte or not self.classroom_teacher_fte:
             return None
-        return self.pupil_headcount / self.classroom_teacher_headcount
+        return self.pupil_fte / self.classroom_teacher_fte
 
     @property
     def pupils_per_classroom_and_support_staff(self) -> float | None:
-        if not self.pupil_headcount:
+        if not self.pupil_fte:
             return None
-        classroom = self.classroom_teacher_headcount or 0
-        support = self.teaching_assistant_headcount or 0
+        classroom = self.classroom_teacher_fte or 0
+        support = self.teaching_assistant_fte or 0
         denominator = classroom + support
         if denominator <= 0:
             return None
-        return self.pupil_headcount / denominator
+        return self.pupil_fte / denominator
 
 
 @dataclass(frozen=True, slots=True)
@@ -312,23 +347,66 @@ def school_result_from_flat_record(record: Mapping[str, Any]) -> SchoolResult:
             adjusted_score=_as_float(record.get("ofsted_adjusted_score")),
         ),
         attendance=AttendanceStatistics(
+            enrolments=_as_int(record.get("attendance_enrolments")),
             overall_absence_pct=_as_float(record.get("overall_absence_pct")),
+            authorised_absence_pct=_as_float(record.get("authorised_absence_pct")),
+            unauthorised_absence_pct=_as_float(record.get("unauthorised_absence_pct")),
             persistent_absence_pct=_as_float(record.get("persistent_absence_pct")),
+            severe_absence_pct=_as_float(record.get("severe_absence_pct")),
             data_year=_as_str(record.get("attendance_year")),
+            source=_as_str(record.get("attendance_source")),
+            source_dataset_id=_as_str(record.get("attendance_source_dataset_id")),
+            source_urn=_as_str(record.get("attendance_source_urn")),
+            source_school_name=_as_str(record.get("attendance_source_school_name")),
+            source_kind=_as_str(record.get("attendance_source_kind")),
+            source_link_depth=_as_int(record.get("attendance_source_link_depth")),
         ),
         behaviour=BehaviourStatistics(
+            pupil_headcount=_as_int(record.get("behaviour_pupil_headcount")),
             suspension_count=_as_int(record.get("suspension_count")),
-            suspension_pct=_as_float(record.get("suspension_pct")),
+            suspension_rate=_as_float(record.get("suspension_rate")),
+            pupils_with_one_or_more_suspension=_as_int(
+                record.get("pupils_with_one_or_more_suspension")
+            ),
+            pupils_with_one_or_more_suspension_rate=_as_float(
+                record.get("pupils_with_one_or_more_suspension_rate")
+            ),
             permanent_exclusion_count=_as_int(record.get("permanent_exclusion_count")),
-            permanent_exclusion_pct=_as_float(record.get("permanent_exclusion_pct")),
+            permanent_exclusion_rate=_as_float(record.get("permanent_exclusion_rate")),
             data_year=_as_str(record.get("behaviour_year")),
+            source=_as_str(record.get("behaviour_source")),
+            source_dataset_id=_as_str(record.get("behaviour_source_dataset_id")),
+            source_urn=_as_str(record.get("behaviour_source_urn")),
+            source_school_name=_as_str(record.get("behaviour_source_school_name")),
+            source_kind=_as_str(record.get("behaviour_source_kind")),
+            source_link_depth=_as_int(record.get("behaviour_source_link_depth")),
         ),
         workforce=WorkforceStatistics(
-            pupil_headcount=_as_int(record.get("pupil_headcount")),
-            teacher_headcount=_as_float(record.get("teacher_headcount")),
-            classroom_teacher_headcount=_as_float(record.get("classroom_teacher_headcount")),
-            teaching_assistant_headcount=_as_float(record.get("teaching_assistant_headcount")),
+            pupil_fte=_as_float(record.get("pupil_fte")),
+            teacher_fte=_as_float(record.get("teacher_fte")),
+            qualified_teacher_fte=_as_float(record.get("qualified_teacher_fte")),
+            classroom_teacher_fte=_as_float(record.get("classroom_teacher_fte")),
+            teaching_assistant_fte=_as_float(record.get("teaching_assistant_fte")),
+            support_staff_fte=_as_float(record.get("support_staff_fte")),
+            teachers_without_qts_fte=_as_float(record.get("teachers_without_qts_fte")),
+            part_time_teacher_pct=_as_float(record.get("part_time_teacher_pct")),
+            pupil_qualified_teacher_ratio=_as_float(
+                record.get("pupil_qualified_teacher_ratio")
+            ),
+            pupil_teacher_ratio=_as_float(record.get("pupil_teacher_ratio")),
+            pupil_adult_ratio=_as_float(record.get("pupil_adult_ratio")),
             data_year=_as_str(record.get("workforce_year")),
+            ratio_year=_as_str(record.get("workforce_ratio_year")),
+            source=_as_str(record.get("workforce_source")),
+            source_dataset_id=_as_str(record.get("workforce_source_dataset_id")),
+            ratio_source=_as_str(record.get("workforce_ratio_source")),
+            ratio_source_dataset_id=_as_str(
+                record.get("workforce_ratio_source_dataset_id")
+            ),
+            source_urn=_as_str(record.get("workforce_source_urn")),
+            source_school_name=_as_str(record.get("workforce_source_school_name")),
+            source_kind=_as_str(record.get("workforce_source_kind")),
+            source_link_depth=_as_int(record.get("workforce_source_link_depth")),
         ),
         admissions=AdmissionsInformation(
             policy=_as_str(record.get("admissions_policy")),
@@ -377,6 +455,56 @@ def school_benchmark_from_flat_record(record: Mapping[str, Any]) -> SchoolBenchm
             attainment8=_as_float(record.get("attainment8")),
             ebacc_entry_pct=_as_float(record.get("ebacc_entry_pct")),
             ebacc_aps=_as_float(record.get("ebacc_aps")),
+        ),
+        attendance=AttendanceStatistics(
+            enrolments=_as_int(record.get("attendance_enrolments")),
+            overall_absence_pct=_as_float(record.get("overall_absence_pct")),
+            authorised_absence_pct=_as_float(record.get("authorised_absence_pct")),
+            unauthorised_absence_pct=_as_float(record.get("unauthorised_absence_pct")),
+            persistent_absence_pct=_as_float(record.get("persistent_absence_pct")),
+            severe_absence_pct=_as_float(record.get("severe_absence_pct")),
+            data_year=_as_str(record.get("attendance_year")),
+            source=_as_str(record.get("attendance_source")),
+            source_dataset_id=_as_str(record.get("attendance_source_dataset_id")),
+        ),
+        behaviour=BehaviourStatistics(
+            pupil_headcount=_as_int(record.get("behaviour_pupil_headcount")),
+            suspension_count=_as_int(record.get("suspension_count")),
+            suspension_rate=_as_float(record.get("suspension_rate")),
+            pupils_with_one_or_more_suspension=_as_int(
+                record.get("pupils_with_one_or_more_suspension")
+            ),
+            pupils_with_one_or_more_suspension_rate=_as_float(
+                record.get("pupils_with_one_or_more_suspension_rate")
+            ),
+            permanent_exclusion_count=_as_int(record.get("permanent_exclusion_count")),
+            permanent_exclusion_rate=_as_float(record.get("permanent_exclusion_rate")),
+            data_year=_as_str(record.get("behaviour_year")),
+            source=_as_str(record.get("behaviour_source")),
+            source_dataset_id=_as_str(record.get("behaviour_source_dataset_id")),
+        ),
+        workforce=WorkforceStatistics(
+            pupil_fte=_as_float(record.get("pupil_fte")),
+            teacher_fte=_as_float(record.get("teacher_fte")),
+            qualified_teacher_fte=_as_float(record.get("qualified_teacher_fte")),
+            classroom_teacher_fte=_as_float(record.get("classroom_teacher_fte")),
+            teaching_assistant_fte=_as_float(record.get("teaching_assistant_fte")),
+            support_staff_fte=_as_float(record.get("support_staff_fte")),
+            teachers_without_qts_fte=_as_float(record.get("teachers_without_qts_fte")),
+            part_time_teacher_pct=_as_float(record.get("part_time_teacher_pct")),
+            pupil_qualified_teacher_ratio=_as_float(
+                record.get("pupil_qualified_teacher_ratio")
+            ),
+            pupil_teacher_ratio=_as_float(record.get("pupil_teacher_ratio")),
+            pupil_adult_ratio=_as_float(record.get("pupil_adult_ratio")),
+            data_year=_as_str(record.get("workforce_year")),
+            ratio_year=_as_str(record.get("workforce_ratio_year")),
+            source=_as_str(record.get("workforce_source")),
+            source_dataset_id=_as_str(record.get("workforce_source_dataset_id")),
+            ratio_source=_as_str(record.get("workforce_ratio_source")),
+            ratio_source_dataset_id=_as_str(
+                record.get("workforce_ratio_source_dataset_id")
+            ),
         ),
     )
 

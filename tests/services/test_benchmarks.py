@@ -8,7 +8,7 @@ from school_finder.services import benchmarks
 
 
 def _benchmark_frame():
-    return pd.DataFrame(
+    frame = pd.DataFrame(
         [
             {
                 "benchmark_level": "Local authority",
@@ -57,6 +57,9 @@ def _benchmark_frame():
             },
         ]
     )
+    for column in sorted(benchmarks._REQUIRED_COLUMNS - set(frame.columns)):
+        frame[column] = None
+    return frame
 
 
 def _mock_parquet(monkeypatch, frame):

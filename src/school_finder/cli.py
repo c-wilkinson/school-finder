@@ -334,6 +334,17 @@ def _run_lookup(args: argparse.Namespace) -> int:
             columns[1:1] = ["preference_score", "preference_score_coverage_pct"]
         if "local_authority_name" in records.columns:
             columns.insert(columns.index("postcode"), "local_authority_name")
+        context_columns = [
+            "overall_absence_pct",
+            "persistent_absence_pct",
+            "suspension_rate",
+            "permanent_exclusion_rate",
+            "pupil_teacher_ratio",
+        ]
+        insert_at = columns.index("town")
+        columns[insert_at:insert_at] = [
+            column for column in context_columns if column in records.columns
+        ]
         display = records[columns].copy()
         display.index = range(1, len(display) + 1)
         display.index.name = "#"
@@ -343,19 +354,30 @@ def _run_lookup(args: argparse.Namespace) -> int:
             benchmark_rows = []
             for benchmark in result.benchmarks:
                 academic = benchmark.academics
+                attendance = benchmark.attendance
+                behaviour = benchmark.behaviour
+                workforce = benchmark.workforce
                 benchmark_rows.append(
                     {
                         "level": benchmark.level,
                         "area": benchmark.label,
-                        "data_year": academic.data_year,
+                        "ks4_year": academic.data_year,
                         "attainment8": academic.attainment8,
                         "progress8": academic.progress8,
                         "progress8_year": academic.progress8_year,
                         "grade5_english_maths_pct": academic.english_maths_grade5_pct,
                         "ebacc_aps": academic.ebacc_aps,
+                        "attendance_year": attendance.data_year,
+                        "overall_absence_pct": attendance.overall_absence_pct,
+                        "persistent_absence_pct": attendance.persistent_absence_pct,
+                        "behaviour_year": behaviour.data_year,
+                        "suspension_rate": behaviour.suspension_rate,
+                        "permanent_exclusion_rate": behaviour.permanent_exclusion_rate,
+                        "workforce_year": workforce.data_year,
+                        "pupil_teacher_ratio": workforce.pupil_teacher_ratio,
                     }
                 )
-            print("\nBenchmark context (all state-funded schools):\n")
+            print("\nBenchmark context (state-funded secondary schools where applicable):\n")
             print(pd.DataFrame(benchmark_rows).to_string(index=False))
     return 0
 
