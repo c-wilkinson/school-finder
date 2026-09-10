@@ -39,6 +39,8 @@ def _school_row(**overrides):
         "town": "Exampletown",
         "county": "Hampshire",
         "postcode": "RG22 6AA",
+        "local_authority_code": "E10000014",
+        "local_authority_name": "Hampshire",
         "easting": 463000,
         "northing": 150000,
         "website": "https://example.test",
@@ -324,8 +326,17 @@ def test_school_results_from_frame_returns_models():
     assert result[0].travel.distance_miles == 1.2
 
 
-def test_search_schools_requires_both_datasets(tmp_path):
-    (tmp_path / "postcodes.parquet").touch()
+@pytest.mark.parametrize(
+    "present",
+    [
+        (),
+        ("postcodes.parquet",),
+        ("postcodes.parquet", "schools.parquet"),
+    ],
+)
+def test_search_schools_requires_all_datasets(tmp_path, present):
+    for filename in present:
+        (tmp_path / filename).touch()
     with pytest.raises(SchoolFinderError, match="Datasets are missing"):
         service.search_schools(tmp_path, SchoolSearchRequest("SW1A 2AA"))
 
@@ -333,6 +344,7 @@ def test_search_schools_requires_both_datasets(tmp_path):
 def test_search_service_returns_application_models_and_passes_request(tmp_path: Path, monkeypatch):
     (tmp_path / "postcodes.parquet").touch()
     (tmp_path / "schools.parquet").touch()
+    (tmp_path / "benchmarks.parquet").touch()
     postcode = PostcodeLocation("SW1A 2AA", 462000, 149000, True)
     monkeypatch.setattr(service, "lookup_postcode", lambda path, value: postcode)
     called = {}
@@ -343,6 +355,30 @@ def test_search_service_returns_application_models_and_passes_request(tmp_path: 
         return pd.DataFrame([row])[service.OUTPUT_COLUMNS]
 
     monkeypatch.setattr(service, "find_schools", fake_find)
+    benchmark_called = {}
+
+    def fake_benchmarks(path, schools):
+        benchmark_called["path"] = path
+        benchmark_called["schools"] = schools
+        return pd.DataFrame([
+            {
+                "benchmark_level": "National",
+                "benchmark_code": "E92000001",
+                "benchmark_name": "England",
+                "performance_year": "202425",
+                "attainment8": 46.1,
+                "english_maths_grade5_pct": 45.4,
+                "english_maths_grade4_pct": 64.8,
+                "ebacc_entry_pct": 40.5,
+                "ebacc_aps": 4.09,
+                "progress8": 0.02,
+                "progress8_year": "202324",
+                "source": "DfE benchmarks",
+                "source_dataset_id": "dataset-id",
+            }
+        ])
+
+    monkeypatch.setattr(service, "find_relevant_benchmarks", fake_benchmarks)
     request = SchoolSearchRequest("SW1A 2AA", radius_miles=5, minimum_attainment8=45)
     result = service.search_schools(tmp_path, request)
     assert result.request is request
@@ -353,6 +389,10 @@ def test_search_service_returns_application_models_and_passes_request(tmp_path: 
     assert called["request"] is request
     assert called["resolved"] is postcode
     assert called["path"] == tmp_path / "schools.parquet"
+    assert benchmark_called["path"] == tmp_path / "benchmarks.parquet"
+    assert benchmark_called["schools"].iloc[0]["school_name"] == "Example Secondary"
+    assert result.benchmarks[0].label == "England"
+    assert result.benchmarks[0].academics.attainment8 == 46.1
 
 
 def test_minimum_ofsted_uses_derived_renewed_eif_equivalent_when_overall_missing(monkeypatch):

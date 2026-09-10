@@ -50,7 +50,7 @@ def lookup_postcode(path: Path, postcode: str) -> PostcodeLocation:
 
     if matches.empty:
         raise SchoolFinderError(
-            f"English postcode not found in the dataset: {postcode}"
+            "Supplied postcode not found in the postcode dataset. Is it a valid English postcode?"
         )
 
     matches = matches.sort_values("is_current", ascending=False, kind="stable")

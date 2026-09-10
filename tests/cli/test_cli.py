@@ -21,7 +21,12 @@ from school_finder.models.filters import (
     SortDirection,
 )
 from school_finder.models.preferences import PreferencePreset, SchoolPreferences
-from school_finder.models.school import SchoolIdentity, SchoolResult
+from school_finder.models.school import (
+    AcademicPerformance,
+    SchoolBenchmarks,
+    SchoolIdentity,
+    SchoolResult,
+)
 from school_finder.models.search import PostcodeLocation, SchoolSearchRequest, SchoolSearchResult
 
 
@@ -191,6 +196,17 @@ def test_run_build_prints_updated_files(monkeypatch, capsys, tmp_path):
     assert f"Published: {tmp_path / 'manifest.json'}" in out
 
 
+def test_run_build_prints_benchmarks_when_updated(monkeypatch, capsys, tmp_path):
+    monkeypatch.setattr(
+        cli,
+        "build_datasets",
+        lambda *a, **k: BuildResult(False, False, True, {}, benchmarks_updated=True),
+    )
+    args = argparse.Namespace(data_dir=tmp_path, force=False, onspd_item_id=None, json=False)
+    assert cli._run_build(args) == 0
+    assert "Updated: benchmarks.parquet" in capsys.readouterr().out
+
+
 def test_run_build_prints_no_changes(monkeypatch, capsys, tmp_path):
     monkeypatch.setattr(cli, "build_datasets", lambda *a, **k: BuildResult(False, False, False, {}))
     args = argparse.Namespace(data_dir=tmp_path, force=False, onspd_item_id=None, json=False)
@@ -202,7 +218,8 @@ def test_run_lookup_structured_json(monkeypatch, capsys):
     monkeypatch.setattr(cli, "search_schools", lambda *a, **k: _lookup_result())
     cli._run_lookup(_lookup_args(structured_json=True))
     payload = json.loads(capsys.readouterr().out)
-    assert payload[0]["identity"]["name"] == "Example"
+    assert payload["schools"][0]["identity"]["name"] == "Example"
+    assert payload["benchmarks"] == []
 
 
 def test_run_lookup_flat_json(monkeypatch, capsys):
@@ -219,6 +236,61 @@ def test_run_lookup_table_output(monkeypatch, capsys):
     assert "Found 1 schools matching search" in out
     assert "Example" in out
     assert "attainment8" in out
+
+
+def test_run_lookup_structured_json_includes_benchmarks(monkeypatch, capsys):
+    result = _lookup_result()
+    benchmark = SchoolBenchmarks(
+        label="England",
+        level="National",
+        code="E92000001",
+        academics=AcademicPerformance(
+            data_year="202425",
+            attainment8=46.1,
+            progress8=0.02,
+            progress8_year="202324",
+            english_maths_grade5_pct=45.4,
+            ebacc_aps=4.09,
+        ),
+    )
+    result = SchoolSearchResult(
+        result.request, result.postcode, result.schools, result.flat_records, (benchmark,)
+    )
+    monkeypatch.setattr(cli, "search_schools", lambda *a, **k: result)
+    cli._run_lookup(_lookup_args(structured_json=True))
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["benchmarks"][0]["label"] == "England"
+    assert payload["benchmarks"][0]["academics"]["attainment8"] == 46.1
+
+
+def test_run_lookup_table_prints_benchmark_context(monkeypatch, capsys):
+    result = _lookup_result()
+    flat = dict(result.flat_records[0])
+    flat["local_authority_name"] = "Hampshire"
+    benchmark = SchoolBenchmarks(
+        label="Hampshire",
+        level="Local authority",
+        code="E10000014",
+        academics=AcademicPerformance(
+            data_year="202425",
+            attainment8=47.2,
+            progress8=-0.03,
+            progress8_year="202324",
+            english_maths_grade5_pct=46.0,
+            ebacc_aps=4.1,
+        ),
+    )
+    result = SchoolSearchResult(
+        result.request, result.postcode, result.schools, (flat,), (benchmark,)
+    )
+    monkeypatch.setattr(cli, "search_schools", lambda *a, **k: result)
+    cli._run_lookup(_lookup_args())
+    out = capsys.readouterr().out
+    assert "local_authority_name" in out
+    assert "Hampshire" in out
+    assert "Benchmark context (all state-funded schools)" in out
+    assert "202425" in out
+    assert "202324" in out
 
 
 def test_run_lookup_table_handles_no_results(monkeypatch, capsys):

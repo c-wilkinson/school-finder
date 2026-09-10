@@ -62,9 +62,17 @@ def read_ks4_quality(path: Path) -> pd.DataFrame:
     latest_time = int(headline["_time_num"].max())
     current = headline[headline["_time_num"] == latest_time].copy()
 
+    la_code_col = find_column(current, "new_la_code", "local_authority_code")
+    la_name_col = find_column(current, "la_name", "local_authority_name")
     result = pd.DataFrame({
         "urn": clean_text_series(current[urn_col]),
         "performance_year": clean_text_series(current[time_col]),
+        "local_authority_code": (
+            clean_text_series(current[la_code_col]) if la_code_col else pd.NA
+        ),
+        "local_authority_name": (
+            clean_text_series(current[la_name_col]) if la_name_col else pd.NA
+        ),
     })
     metrics = {
         "attainment8": "attainment8_average",

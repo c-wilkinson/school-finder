@@ -7,7 +7,12 @@ from typing import Any, Iterable
 
 import pandas as pd
 
-from school_finder.config import METRES_PER_MILE, POSTCODES_FILENAME, SCHOOLS_FILENAME
+from school_finder.config import (
+    BENCHMARKS_FILENAME,
+    METRES_PER_MILE,
+    POSTCODES_FILENAME,
+    SCHOOLS_FILENAME,
+)
 from school_finder.data.parquet import require_pyarrow
 from school_finder.errors import SchoolFinderError
 from school_finder.models.filters import (
@@ -20,6 +25,10 @@ from school_finder.models.filters import (
 from school_finder.models.ofsted import derive_equivalent_ofsted_rating
 from school_finder.models.school import SchoolResult, school_result_from_flat_record
 from school_finder.models.search import PostcodeLocation, SchoolSearchRequest, SchoolSearchResult
+from school_finder.services.benchmarks import (
+    benchmark_results_from_frame,
+    find_relevant_benchmarks,
+)
 from school_finder.services.postcode import lookup_postcode
 from school_finder.services.scoring import (
     SCORE_OUTPUT_COLUMNS,
@@ -102,6 +111,11 @@ PROGRESS8_PROVENANCE_COLUMNS = [
     "progress8_source_school_name",
     "progress8_source_kind",
     "progress8_source_link_depth",
+]
+
+LOCAL_AUTHORITY_COLUMNS = [
+    "local_authority_code",
+    "local_authority_name",
 ]
 
 
@@ -348,7 +362,7 @@ def find_schools(
     )
     output_columns = OUTPUT_COLUMNS + [
         column
-        for column in PROGRESS8_PROVENANCE_COLUMNS + SCORE_OUTPUT_COLUMNS
+        for column in LOCAL_AUTHORITY_COLUMNS + PROGRESS8_PROVENANCE_COLUMNS + SCORE_OUTPUT_COLUMNS
         if column in eligible.columns
     ]
     return eligible[output_columns].reset_index(drop=True)
@@ -376,7 +390,12 @@ def search_schools(
 ) -> SchoolSearchResult:
     postcodes_path = data_dir / POSTCODES_FILENAME
     schools_path = data_dir / SCHOOLS_FILENAME
-    if not postcodes_path.exists() or not schools_path.exists():
+    benchmarks_path = data_dir / BENCHMARKS_FILENAME
+    if (
+        not postcodes_path.exists()
+        or not schools_path.exists()
+        or not benchmarks_path.exists()
+    ):
         raise SchoolFinderError(
             f"Datasets are missing from {data_dir}. Run 'school-finder build' first."
         )
@@ -385,9 +404,12 @@ def search_schools(
     frame = find_schools(schools_path, postcode, request)
     records = tuple(serialisable_records(frame))
     schools = tuple(school_result_from_flat_record(record) for record in records)
+    benchmark_frame = find_relevant_benchmarks(benchmarks_path, frame)
+    benchmarks = benchmark_results_from_frame(benchmark_frame)
     return SchoolSearchResult(
         request=request,
         postcode=postcode,
         schools=schools,
         flat_records=records,
+        benchmarks=benchmarks,
     )

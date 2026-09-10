@@ -72,13 +72,13 @@ school-finder lookup "SW1A 2AA" --structured-json
 Searches can be restricted using a number of hard filters:
 
 ```bash
-school-finder lookup "SW1A 2AA" \
-    --radius 5 \
-    --phase secondary \
-    --sector state-funded \
-    --gender mixed \
-    --faith non-faith \
-    --minimum-ofsted good \
+school-finder lookup "SW1A 2AA"
+    --radius 5
+    --phase secondary
+    --sector state-funded
+    --gender mixed
+    --faith non-faith
+    --minimum-ofsted good
     --minimum-attainment8 45
 ```
 
@@ -89,12 +89,12 @@ Filters determine which schools are acceptable. Preference scoring is then used 
 Schools can be ranked according to configurable priorities:
 
 ```bash
-school-finder lookup "SW1A 2AA" \
-    --radius 5 \
-    --weight-distance 30 \
-    --weight-ofsted 25 \
-    --weight-attainment8 20 \
-    --weight-progress8 15 \
+school-finder lookup "SW1A 2AA"
+    --radius 5
+    --weight-distance 30
+    --weight-ofsted 25
+    --weight-attainment8 20
+    --weight-progress8 15
     --weight-grade5-english-maths 10
 ```
 
