@@ -43,12 +43,28 @@ def _row(**overrides):
         "establishment_type_group": "All state-funded",
         "breakdown_topic": "Total",
         "breakdown": "Total",
+        "pupil_count": "200",
         "attainment8_average": "46.1",
+        "attainment8eng_average": "10.0",
+        "attainment8mat_average": "9.5",
+        "attainment8ebacc_average": "12.5",
+        "attainment8open_average": "14.1",
         "engmath_95_percent": "45.4",
         "engmath_94_percent": "64.8",
         "ebacc_entering_percent": "40.5",
+        "ebacc_95_percent": "20.0",
+        "ebacc_94_percent": "30.0",
         "ebacc_aps_average": "4.09",
+        "sci_triple_entering_percent": "25",
+        "lan_multiple_entering_percent": "10",
+        "gcse_entries_average": "7.1",
+        "qual_entries_average": "7.8",
+        "progress8_pupil_count": "180",
         "progress8_average": "z",
+        "progress8eng_average": "z",
+        "progress8mat_average": "z",
+        "progress8ebacc_average": "z",
+        "progress8open_average": "z",
     }
     row.update(overrides)
     return row
@@ -72,7 +88,7 @@ def test_discover_source_wraps_request_errors():
 def test_read_benchmarks_returns_current_england_and_la_with_latest_published_progress8(tmp_path: Path):
     path = tmp_path / "benchmarks.csv"
     pd.DataFrame([
-        _row(time_period="202324", progress8_average="0.02", attainment8_average="45.0"),
+        _row(time_period="202324", progress8_pupil_count="190", progress8_average="0.02", progress8eng_average="0.03", progress8mat_average="0.01", progress8ebacc_average="0.04", progress8open_average="0.00", attainment8_average="45.0"),
         _row(),
         _row(
             time_period="202324",
@@ -81,7 +97,12 @@ def test_read_benchmarks_returns_current_england_and_la_with_latest_published_pr
             la_name="Hampshire",
             country_code="E92000001",
             country_name="England",
+            progress8_pupil_count="195",
             progress8_average="-0.01",
+            progress8eng_average="0.01",
+            progress8mat_average="-0.02",
+            progress8ebacc_average="-0.03",
+            progress8open_average="0.00",
             attainment8_average="45.5",
         ),
         _row(
@@ -105,8 +126,19 @@ def test_read_benchmarks_returns_current_england_and_la_with_latest_published_pr
     assert england["benchmark_level"] == "National"
     assert england["benchmark_name"] == "England"
     assert england["performance_year"] == "202425"
+    assert england["pupil_count"] == 200
     assert england["attainment8"] == 46.1
+    assert england["attainment8_english"] == 10.0
+    assert england["attainment8_open"] == 14.1
+    assert england["ebacc_grade5_pct"] == 20.0
+    assert england["triple_science_entry_pct"] == 25
+    assert england["gcse_entries_per_pupil"] == 7.1
+    assert england["progress8_pupil_count"] == 190
     assert england["progress8"] == 0.02
+    assert england["progress8_english"] == 0.03
+    assert england["progress8_maths"] == 0.01
+    assert england["progress8_ebacc"] == 0.04
+    assert england["progress8_open"] == 0.0
     assert england["progress8_year"] == "202324"
     assert england["source_dataset_id"] == ks4_benchmarks.EES_KS4_BENCHMARK_DATASET_ID
 

@@ -29,6 +29,7 @@ def test_custom_preferences_accept_arbitrary_non_negative_scale_and_normalise():
         PreferencePreset.ACADEMIC,
         PreferencePreset.CLOSEST,
         PreferencePreset.OFSTED_FOCUSED,
+        PreferencePreset.PASTORAL_FOCUSED,
     ],
 )
 def test_all_named_presets_produce_valid_weights(preset):
@@ -42,11 +43,13 @@ def test_preset_shapes_match_their_intent():
     academic = SchoolPreferences.from_preset(PreferencePreset.ACADEMIC)
     closest = SchoolPreferences.from_preset(PreferencePreset.CLOSEST)
     ofsted = SchoolPreferences.from_preset(PreferencePreset.OFSTED_FOCUSED)
+    pastoral = SchoolPreferences.from_preset(PreferencePreset.PASTORAL_FOCUSED)
 
     assert balanced.distance == balanced.ofsted == balanced.attainment8 == balanced.progress8 == 20
     assert academic.progress8 == max(academic.weights().values())
     assert closest.distance == max(closest.weights().values())
     assert ofsted.ofsted == max(ofsted.weights().values())
+    assert pastoral.pastoral_care == max(pastoral.weights().values())
 
 
 def test_custom_preset_requires_explicit_weights():
@@ -61,6 +64,7 @@ def test_custom_preset_requires_explicit_weights():
         ({"distance": -1}, "distance preference weight cannot be negative"),
         ({"ofsted": math.inf}, "ofsted preference weight must be finite"),
         ({"progress8": math.nan}, "progress8 preference weight must be finite"),
+        ({"pastoral_care": -1}, "pastoral-care preference weight cannot be negative"),
     ],
 )
 def test_preference_validation(kwargs, message):

@@ -47,6 +47,7 @@ class SchoolSortField(StrEnum):
     PROGRESS8 = "progress8"
     GRADE5_ENGLISH_MATHS = "grade5-english-maths"
     EBACC_APS = "ebacc-aps"
+    PASTORAL_CARE = "pastoral-care"
 
 
 class SortDirection(StrEnum):

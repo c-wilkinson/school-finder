@@ -30,6 +30,7 @@ from school_finder.services.benchmarks import (
     find_relevant_benchmarks,
 )
 from school_finder.services.postcode import lookup_postcode
+from school_finder.data.sources.parent_view import refresh_parent_view_for_frame
 from school_finder.services.scoring import (
     SCORE_OUTPUT_COLUMNS,
     rank_scored_frame,
@@ -88,12 +89,28 @@ OUTPUT_COLUMNS = [
     "ofsted_personal_development",
     "ofsted_leadership",
     "performance_year",
+    "pupil_count",
     "attainment8",
+    "attainment8_english",
+    "attainment8_maths",
+    "attainment8_ebacc",
+    "attainment8_open",
     "english_maths_grade5_pct",
     "english_maths_grade4_pct",
     "ebacc_entry_pct",
+    "ebacc_grade5_pct",
+    "ebacc_grade4_pct",
     "ebacc_aps",
+    "triple_science_entry_pct",
+    "multiple_languages_entry_pct",
+    "gcse_entries_per_pupil",
+    "qualification_entries_per_pupil",
+    "progress8_pupil_count",
     "progress8",
+    "progress8_english",
+    "progress8_maths",
+    "progress8_ebacc",
+    "progress8_open",
     "progress8_year",
     "address",
     "town",
@@ -173,6 +190,46 @@ WORKFORCE_COLUMNS = [
     "workforce_source_school_name",
     "workforce_source_kind",
     "workforce_source_link_depth",
+]
+
+PASTORAL_COLUMNS = [
+    "parent_view_as_at_date",
+    "parent_view_survey_year",
+    "parent_view_questionnaire_version",
+    "pastoral_response_count",
+    "happy_pct",
+    "safe_pct",
+    "behaviour_positive_pct",
+    "bullying_dealt_with_pct",
+    "send_support_pct",
+    "communication_pct",
+    "concerns_dealt_with_pct",
+    "best_interests_pct",
+    "learning_support_pct",
+    "personal_development_pct",
+    "recommend_pct",
+    "pastoral_score",
+    "pastoral_score_coverage_pct",
+    "pastoral_source",
+    "pastoral_source_url",
+]
+
+DESTINATION_COLUMNS = [
+    "destination_leaver_year",
+    "destination_year",
+    "destination_pupil_count",
+    "sustained_destination_pct",
+    "education_destination_pct",
+    "apprenticeship_destination_pct",
+    "employment_destination_pct",
+    "not_sustained_destination_pct",
+    "unknown_destination_pct",
+    "destination_source",
+    "destination_source_dataset_id",
+    "destination_source_urn",
+    "destination_source_school_name",
+    "destination_source_kind",
+    "destination_source_link_depth",
 ]
 
 
@@ -315,7 +372,12 @@ def _filter_minimum_ofsted(
     return frame[scores.notna() & scores.ge(minimum_score)].copy()
 
 
-def _apply_filters(frame: pd.DataFrame, request: SchoolSearchRequest) -> pd.DataFrame:
+def _apply_filters(
+    frame: pd.DataFrame,
+    request: SchoolSearchRequest,
+    *,
+    include_pastoral: bool = True,
+) -> pd.DataFrame:
     filtered = frame
     if request.radius_miles is not None:
         filtered = filtered[filtered["distance_miles"] <= request.radius_miles].copy()
@@ -333,7 +395,23 @@ def _apply_filters(frame: pd.DataFrame, request: SchoolSearchRequest) -> pd.Data
         "english_maths_grade5_pct",
         request.minimum_grade5_english_maths_pct,
     )
-    return _filter_numeric_minimum(filtered, "ebacc_aps", request.minimum_ebacc_aps)
+    filtered = _filter_numeric_minimum(filtered, "ebacc_aps", request.minimum_ebacc_aps)
+    if include_pastoral:
+        filtered = _filter_numeric_minimum(
+            filtered, "pastoral_score", request.minimum_pastoral_score
+        )
+    return filtered
+
+
+def _request_uses_pastoral(request: SchoolSearchRequest) -> bool:
+    if request.minimum_pastoral_score is not None:
+        return True
+    if request.sort.field is SchoolSortField.PASTORAL_CARE:
+        return True
+    return (
+        request.preferences is not None
+        and request.preferences.pastoral_care > 0
+    )
 
 
 def _sort_schools(frame: pd.DataFrame, request: SchoolSearchRequest) -> pd.DataFrame:
@@ -351,6 +429,7 @@ def _sort_schools(frame: pd.DataFrame, request: SchoolSearchRequest) -> pd.DataF
             SchoolSortField.PROGRESS8: "progress8",
             SchoolSortField.GRADE5_ENGLISH_MATHS: "english_maths_grade5_pct",
             SchoolSortField.EBACC_APS: "ebacc_aps",
+            SchoolSortField.PASTORAL_CARE: "pastoral_score",
         }[sort.field]
         sortable = frame
 
@@ -403,7 +482,13 @@ def find_schools(
     eligible["distance_miles"] = eligible["distance_metres"] / METRES_PER_MILE
 
     eligible = _add_equivalent_ofsted(eligible)
-    eligible = _apply_filters(eligible, request)
+    uses_pastoral = _request_uses_pastoral(request)
+    eligible = _apply_filters(eligible, request, include_pastoral=not uses_pastoral)
+    if uses_pastoral:
+        eligible = refresh_parent_view_for_frame(eligible)
+        eligible = _filter_numeric_minimum(
+            eligible, "pastoral_score", request.minimum_pastoral_score
+        )
     if request.preferences is not None:
         eligible = score_school_frame(eligible, request.preferences)
         eligible = rank_scored_frame(eligible)
@@ -417,7 +502,7 @@ def find_schools(
         + "–"
         + eligible["high_age"].astype("Int64").astype("string")
     )
-    output_columns = OUTPUT_COLUMNS + [
+    output_columns = [column for column in OUTPUT_COLUMNS if column in eligible.columns] + [
         column
         for column in (
             LOCAL_AUTHORITY_COLUMNS
@@ -425,6 +510,8 @@ def find_schools(
             + ATTENDANCE_COLUMNS
             + BEHAVIOUR_COLUMNS
             + WORKFORCE_COLUMNS
+            + DESTINATION_COLUMNS
+            + PASTORAL_COLUMNS
             + SCORE_OUTPUT_COLUMNS
         )
         if column in eligible.columns

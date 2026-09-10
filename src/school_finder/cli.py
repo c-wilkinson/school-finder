@@ -15,6 +15,7 @@ from school_finder.config import (
     MANIFEST_FILENAME,
     POSTCODES_FILENAME,
     SCHOOLS_FILENAME,
+    SUBJECTS_FILENAME,
 )
 from school_finder.data.build import build_datasets
 from school_finder.errors import SchoolFinderError
@@ -61,6 +62,7 @@ def _preferences_from_args(args: argparse.Namespace) -> SchoolPreferences | None
         "progress8": "weight_progress8",
         "grade5_english_maths": "weight_grade5_english_maths",
         "ebacc_aps": "weight_ebacc_aps",
+        "pastoral_care": "weight_pastoral_care",
     }
     overrides = {
         field: getattr(args, argument, None)
@@ -85,6 +87,7 @@ def _preferences_from_args(args: argparse.Namespace) -> SchoolPreferences | None
             "progress8": base.progress8,
             "grade5_english_maths": base.grade5_english_maths,
             "ebacc_aps": base.ebacc_aps,
+            "pastoral_care": base.pastoral_care,
         }
         for field, value in overrides.items():
             if value is not None:
@@ -112,7 +115,7 @@ def create_parser() -> argparse.ArgumentParser:
     build.add_argument(
         "--force",
         action="store_true",
-        help="Rebuild both datasets even when source versions are unchanged.",
+        help="Rebuild all datasets even when source versions are unchanged.",
     )
     build.add_argument(
         "--onspd-item-id",
@@ -192,6 +195,11 @@ def create_parser() -> argparse.ArgumentParser:
     )
     lookup.add_argument("--minimum-ebacc-aps", type=float)
     lookup.add_argument(
+        "--minimum-pastoral-score",
+        type=float,
+        help="Minimum School Finder pastoral-care score (0-100).",
+    )
+    lookup.add_argument(
         "--preference-preset",
         type=_enum_parser(PreferencePreset),
         help=(
@@ -209,6 +217,11 @@ def create_parser() -> argparse.ArgumentParser:
         type=float,
     )
     lookup.add_argument("--weight-ebacc-aps", type=float)
+    lookup.add_argument(
+        "--weight-pastoral-care",
+        type=float,
+        help="Preference weight for the School Finder pastoral-care score.",
+    )
     lookup.add_argument(
         "--sort",
         type=_enum_parser(SchoolSortField),
@@ -249,6 +262,8 @@ def _run_build(args: argparse.Namespace) -> int:
             updated.append(POSTCODES_FILENAME)
         if result.benchmarks_updated:
             updated.append(BENCHMARKS_FILENAME)
+        if result.subjects_updated:
+            updated.append(SUBJECTS_FILENAME)
         print("Updated: " + ", ".join(updated))
         print(f"Published: {args.data_dir / MANIFEST_FILENAME}")
     else:
@@ -276,6 +291,7 @@ def _run_lookup(args: argparse.Namespace) -> int:
             minimum_progress8=args.minimum_progress8,
             minimum_grade5_english_maths_pct=args.minimum_grade5_english_maths_pct,
             minimum_ebacc_aps=args.minimum_ebacc_aps,
+            minimum_pastoral_score=args.minimum_pastoral_score,
             sort=SchoolSort(
                 field=args.sort,
                 direction=(
@@ -335,6 +351,14 @@ def _run_lookup(args: argparse.Namespace) -> int:
         if "local_authority_name" in records.columns:
             columns.insert(columns.index("postcode"), "local_authority_name")
         context_columns = [
+            "pupil_count",
+            "english_maths_grade5_pct",
+            "ebacc_entry_pct",
+            "ebacc_grade5_pct",
+            "triple_science_entry_pct",
+            "sustained_destination_pct",
+            "pastoral_score",
+            "pastoral_response_count",
             "overall_absence_pct",
             "persistent_absence_pct",
             "suspension_rate",
@@ -357,6 +381,7 @@ def _run_lookup(args: argparse.Namespace) -> int:
                 attendance = benchmark.attendance
                 behaviour = benchmark.behaviour
                 workforce = benchmark.workforce
+                destinations = benchmark.destinations
                 benchmark_rows.append(
                     {
                         "level": benchmark.level,
@@ -367,6 +392,10 @@ def _run_lookup(args: argparse.Namespace) -> int:
                         "progress8_year": academic.progress8_year,
                         "grade5_english_maths_pct": academic.english_maths_grade5_pct,
                         "ebacc_aps": academic.ebacc_aps,
+                        "ebacc_grade5_pct": academic.ebacc_grade5_pct,
+                        "triple_science_entry_pct": academic.triple_science_entry_pct,
+                        "destination_year": destinations.destination_year,
+                        "sustained_destination_pct": destinations.sustained_destination_pct,
                         "attendance_year": attendance.data_year,
                         "overall_absence_pct": attendance.overall_absence_pct,
                         "persistent_absence_pct": attendance.persistent_absence_pct,

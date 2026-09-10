@@ -21,8 +21,14 @@ def test_maps_all_current_and_future_canonical_fields_into_nested_contract():
         "easting":"1", "northing":2.4, "latitude":"51.2", "longitude":"-1.2",
         "performance_year":"202425", "progress8":"0.17", "progress8_year":"202324",
         "english_maths_grade5_pct":"55", "english_maths_grade4_pct":75,
-        "attainment8":"50.2", "attainment8_english":"11", "attainment8_maths":"10",
-        "attainment8_other":"29.2", "ebacc_entry_pct":"40", "ebacc_aps":"4.5",
+        "pupil_count":"180", "attainment8":"50.2", "attainment8_english":"11",
+        "attainment8_maths":"10", "attainment8_ebacc":"14.2", "attainment8_open":"15",
+        "ebacc_entry_pct":"40", "ebacc_grade5_pct":"28", "ebacc_grade4_pct":"42",
+        "ebacc_aps":"4.5", "triple_science_entry_pct":"31",
+        "multiple_languages_entry_pct":"8", "gcse_entries_per_pupil":"8.2",
+        "qualification_entries_per_pupil":"9.1", "progress8_pupil_count":"170",
+        "progress8_english":"0.10", "progress8_maths":"0.21", "progress8_ebacc":"0.14",
+        "progress8_open":"0.23",
         "ofsted_rating":"Good", "ofsted_equivalent_rating":"Good",
         "ofsted_equivalent_basis":"official",
         "ofsted_equivalent_explanation":"Official Ofsted overall effectiveness grade.",
@@ -31,7 +37,17 @@ def test_maps_all_current_and_future_canonical_fields_into_nested_contract():
         "ofsted_inclusion":"Strong", "ofsted_curriculum_teaching":"Good",
         "ofsted_achievement":"Good", "ofsted_attendance_behaviour":"Good",
         "ofsted_personal_development":"Good", "ofsted_leadership":"Good",
-        "ofsted_adjusted_score":"3.5", "attendance_enrolments":"960",
+        "ofsted_adjusted_score":"3.5",
+        "pastoral_response_count":"84", "happy_pct":"82", "safe_pct":"90",
+        "behaviour_positive_pct":"75", "bullying_dealt_with_pct":"68",
+        "send_support_pct":"71", "communication_pct":"76",
+        "concerns_dealt_with_pct":"69", "best_interests_pct":"80",
+        "learning_support_pct":"79", "recommend_pct":"88",
+        "pastoral_score":"79.35", "pastoral_score_coverage_pct":"100",
+        "parent_view_as_at_date":"2026-04-06",
+        "pastoral_source":"Ofsted Parent View management information",
+        "pastoral_source_url":"https://example.test/parent-view.ods",
+        "attendance_enrolments":"960",
         "overall_absence_pct":"7.4", "authorised_absence_pct":"5.1",
         "unauthorised_absence_pct":"2.3", "persistent_absence_pct":"12",
         "severe_absence_pct":"1.2", "attendance_year":"202425",
@@ -56,6 +72,14 @@ def test_maps_all_current_and_future_canonical_fields_into_nested_contract():
         "workforce_ratio_source":"DfE ratios", "workforce_ratio_source_dataset_id":"ratio-id",
         "workforce_source_urn":"123456", "workforce_source_school_name":"Example School",
         "workforce_source_kind":"current", "workforce_source_link_depth":"0",
+        "destination_pupil_count":"175", "sustained_destination_pct":"94.2",
+        "education_destination_pct":"83.1", "apprenticeship_destination_pct":"4.5",
+        "employment_destination_pct":"6.6", "not_sustained_destination_pct":"3.1",
+        "unknown_destination_pct":"2.7", "destination_leaver_year":"202223",
+        "destination_year":"202324", "destination_source":"DfE destinations",
+        "destination_source_dataset_id":"dest-id", "destination_source_urn":"111",
+        "destination_source_school_name":"Old school", "destination_source_kind":"predecessor",
+        "destination_source_link_depth":"1",
         "admissions_policy":"Non-selective",
         "selective":"no", "published_admission_number":"240", "catchment_description":"Area",
         "last_offer_distance_miles":"2.4", "last_offer_year":"2026", "admissions_likelihood":"Likely",
@@ -70,9 +94,21 @@ def test_maps_all_current_and_future_canonical_fields_into_nested_contract():
     assert result.location.local_authority_code == "E10000014"
     assert result.location.local_authority_name == "Hampshire"
     assert result.academics.attainment8 == 50.2
+    assert result.academics.pupil_count == 180
+    assert result.academics.attainment8_ebacc == 14.2
+    assert result.academics.attainment8_open == 15.0
+    assert result.academics.ebacc_grade5_pct == 28.0
+    assert result.academics.triple_science_entry_pct == 31.0
+    assert result.academics.gcse_entries_per_pupil == 8.2
+    assert result.academics.progress8_pupil_count == 170
+    assert result.academics.progress8_open == 0.23
     assert result.inspection.inspection_year == 2025
     assert result.inspection.equivalent_rating == "Good"
     assert result.inspection.equivalent_basis == "official"
+    assert result.pastoral.response_count == 84
+    assert result.pastoral.safe_pct == 90.0
+    assert result.pastoral.score == 79.35
+    assert result.pastoral.as_at_date == date(2026, 4, 6)
     assert result.attendance.overall_absence_pct == 7.4
     assert result.attendance.authorised_absence_pct == 5.1
     assert result.attendance.source_kind == "predecessor"
@@ -81,6 +117,9 @@ def test_maps_all_current_and_future_canonical_fields_into_nested_contract():
     assert result.workforce.pupil_teacher_ratio == 16.0
     assert result.workforce.pupils_per_classroom_teacher == 20.0
     assert result.workforce.pupils_per_classroom_and_support_staff == 16.0
+    assert result.destinations.sustained_destination_pct == 94.2
+    assert result.destinations.destination_year == "202324"
+    assert result.destinations.source_kind == "predecessor"
     assert result.admissions.selective is False
     assert result.travel.public_transport_time_saved_minutes == 15
     assert result.travel.school_day.summary == "08:30-15:30"
@@ -155,7 +194,23 @@ def test_benchmark_from_flat_record_maps_metadata_and_academics():
         "source": "DfE benchmark source",
         "source_dataset_id": "dataset-id",
         "performance_year": "202425",
+        "pupil_count": "12000",
+        "attainment8_english": "10.8",
+        "attainment8_maths": "9.4",
+        "attainment8_ebacc": "13.2",
+        "attainment8_open": "13.4",
+        "ebacc_grade5_pct": "25.0",
+        "ebacc_grade4_pct": "38.0",
+        "triple_science_entry_pct": "28.0",
+        "multiple_languages_entry_pct": "6.0",
+        "gcse_entries_per_pupil": "8.1",
+        "qualification_entries_per_pupil": "9.0",
+        "progress8_pupil_count": "11000",
         "progress8": "-0.01",
+        "progress8_english": "0.02",
+        "progress8_maths": "-0.03",
+        "progress8_ebacc": "-0.04",
+        "progress8_open": "0.01",
         "progress8_year": "202324",
         "english_maths_grade5_pct": "47.1",
         "english_maths_grade4_pct": "66.2",
@@ -198,6 +253,17 @@ def test_benchmark_from_flat_record_maps_metadata_and_academics():
         "workforce_source_dataset_id": "wf-id",
         "workforce_ratio_source": "ratios",
         "workforce_ratio_source_dataset_id": "ratio-id",
+        "destination_pupil_count": "11000",
+        "sustained_destination_pct": "92.0",
+        "education_destination_pct": "80.0",
+        "apprenticeship_destination_pct": "5.0",
+        "employment_destination_pct": "7.0",
+        "not_sustained_destination_pct": "4.0",
+        "unknown_destination_pct": "4.0",
+        "destination_leaver_year": "202223",
+        "destination_year": "202324",
+        "destination_source": "destinations",
+        "destination_source_dataset_id": "dest-id",
     })
     assert benchmark.label == "Hampshire"
     assert benchmark.level == "Local authority"
@@ -205,6 +271,11 @@ def test_benchmark_from_flat_record_maps_metadata_and_academics():
     assert benchmark.source == "DfE benchmark source"
     assert benchmark.source_dataset_id == "dataset-id"
     assert benchmark.academics.data_year == "202425"
+    assert benchmark.academics.pupil_count == 12000
+    assert benchmark.academics.attainment8_ebacc == 13.2
+    assert benchmark.academics.ebacc_grade5_pct == 25.0
+    assert benchmark.academics.progress8_pupil_count == 11000
+    assert benchmark.academics.progress8_english == 0.02
     assert benchmark.academics.progress8 == -0.01
     assert benchmark.academics.progress8_year == "202324"
     assert benchmark.academics.english_maths_grade5_pct == 47.1
@@ -219,6 +290,8 @@ def test_benchmark_from_flat_record_maps_metadata_and_academics():
     assert benchmark.workforce.teacher_fte == 60.0
     assert benchmark.workforce.pupil_teacher_ratio == 16.7
     assert benchmark.workforce.ratio_year == "202526"
+    assert benchmark.destinations.sustained_destination_pct == 92.0
+    assert benchmark.destinations.destination_year == "202324"
 
 
 def test_benchmark_from_flat_record_handles_missing_identity_and_metrics():
@@ -279,7 +352,7 @@ def test_maps_preference_scoring_into_explainable_school_score():
     score = result.preference_score
     assert score.overall == 81.25
     assert score.coverage_pct == 80.0
-    assert len(score.components) == 6
+    assert len(score.components) == 7
     assert score.component(model.PreferenceMetric.DISTANCE).raw_value == 1.5
     assert score.component(model.PreferenceMetric.OFSTED).raw_value == "Good"
     assert score.component(model.PreferenceMetric.ATTAINMENT8).raw_value == 52.0

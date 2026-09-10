@@ -76,6 +76,7 @@ def _lookup_args(**overrides):
         minimum_progress8=None,
         minimum_grade5_english_maths_pct=None,
         minimum_ebacc_aps=None,
+        minimum_pastoral_score=None,
         preference_preset=None,
         weight_distance=None,
         weight_ofsted=None,
@@ -83,6 +84,7 @@ def _lookup_args(**overrides):
         weight_progress8=None,
         weight_grade5_english_maths=None,
         weight_ebacc_aps=None,
+        weight_pastoral_care=None,
         sort=SchoolSortField.DISTANCE,
         descending=False,
         json=False,
@@ -111,6 +113,8 @@ def test_create_parser_build_and_lookup_defaults():
     assert lookup.selection is SelectionFilter.ANY
     assert lookup.preference_preset is None
     assert lookup.weight_distance is None
+    assert lookup.weight_pastoral_care is None
+    assert lookup.minimum_pastoral_score is None
     assert lookup.sort is SchoolSortField.DISTANCE
     assert lookup.descending is False
 
@@ -134,6 +138,7 @@ def test_parser_accepts_all_search_filters_case_insensitively():
         "--minimum-progress8", "-0.2",
         "--minimum-grade5-english-maths", "50",
         "--minimum-ebacc-aps", "4.1",
+        "--minimum-pastoral-score", "70",
         "--preference-preset", "academic",
         "--weight-distance", "7",
         "--weight-ofsted", "8",
@@ -141,6 +146,7 @@ def test_parser_accepts_all_search_filters_case_insensitively():
         "--weight-progress8", "10",
         "--weight-grade5-english-maths", "11",
         "--weight-ebacc-aps", "12",
+        "--weight-pastoral-care", "13",
         "--sort", "grade5_english_maths",
         "--descending",
     ])
@@ -156,6 +162,7 @@ def test_parser_accepts_all_search_filters_case_insensitively():
     assert args.minimum_progress8 == -0.2
     assert args.minimum_grade5_english_maths_pct == 50
     assert args.minimum_ebacc_aps == 4.1
+    assert args.minimum_pastoral_score == 70
     assert args.preference_preset is PreferencePreset.ACADEMIC
     assert args.weight_distance == 7
     assert args.weight_ofsted == 8
@@ -163,6 +170,7 @@ def test_parser_accepts_all_search_filters_case_insensitively():
     assert args.weight_progress8 == 10
     assert args.weight_grade5_english_maths == 11
     assert args.weight_ebacc_aps == 12
+    assert args.weight_pastoral_care == 13
     assert args.sort is SchoolSortField.GRADE5_ENGLISH_MATHS
     assert args.descending is True
 
@@ -336,6 +344,7 @@ def test_run_lookup_passes_all_search_request_fields(monkeypatch):
         minimum_progress8=0.1,
         minimum_grade5_english_maths_pct=60,
         minimum_ebacc_aps=4.5,
+        minimum_pastoral_score=75,
         preference_preset=PreferencePreset.BALANCED,
         weight_distance=30,
         sort=SchoolSortField.ATTAINMENT8,
@@ -360,6 +369,7 @@ def test_run_lookup_passes_all_search_request_fields(monkeypatch):
         minimum_progress8=0.1,
         minimum_grade5_english_maths_pct=60,
         minimum_ebacc_aps=4.5,
+        minimum_pastoral_score=75,
         sort=SchoolSort(SchoolSortField.ATTAINMENT8, SortDirection.DESC),
         preferences=SchoolPreferences(
             distance=30,
@@ -416,8 +426,9 @@ def test_preferences_from_args_supports_custom_weights():
         weight_distance=3,
         weight_ofsted=2,
         weight_attainment8=5,
+        weight_pastoral_care=4,
     ))
-    assert preferences == SchoolPreferences(distance=3, ofsted=2, attainment8=5)
+    assert preferences == SchoolPreferences(distance=3, ofsted=2, attainment8=5, pastoral_care=4)
 
 
 def test_preferences_from_args_uses_preset_and_allows_overrides():
@@ -452,3 +463,38 @@ def test_run_lookup_table_includes_preference_score_when_present(monkeypatch, ca
     out = capsys.readouterr().out
     assert "preference_score" in out
     assert "82.5" in out
+
+
+def test_run_build_prints_subjects_when_updated(monkeypatch, capsys, tmp_path):
+    monkeypatch.setattr(
+        cli,
+        "build_datasets",
+        lambda *a, **k: BuildResult(False, False, True, {}, subjects_updated=True),
+    )
+    args = argparse.Namespace(data_dir=tmp_path, force=False, onspd_item_id=None, json=False)
+    assert cli._run_build(args) == 0
+    assert "Updated: subjects.parquet" in capsys.readouterr().out
+
+
+def test_preferences_from_args_supports_pastoral_focused_preset():
+    preferences = cli._preferences_from_args(
+        _lookup_args(preference_preset=PreferencePreset.PASTORAL_FOCUSED)
+    )
+    assert preferences.pastoral_care == 50
+    assert sum(preferences.weights().values()) == 100
+
+
+def test_run_lookup_table_includes_pastoral_context(monkeypatch, capsys):
+    result = _lookup_result()
+    flat = dict(result.flat_records[0])
+    flat["pastoral_score"] = 82.5
+    flat["pastoral_response_count"] = 64
+    pastoral_result = SchoolSearchResult(
+        result.request, result.postcode, result.schools, (flat,)
+    )
+    monkeypatch.setattr(cli, "search_schools", lambda *a, **k: pastoral_result)
+    cli._run_lookup(_lookup_args())
+    out = capsys.readouterr().out
+    assert "pastoral_score" in out
+    assert "82.5" in out
+    assert "pastoral_response_count" in out

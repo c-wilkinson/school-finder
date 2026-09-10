@@ -15,6 +15,7 @@ def _frame(**overrides):
             "progress8": -0.2,
             "english_maths_grade5_pct": 40.0,
             "ebacc_aps": 3.0,
+            "pastoral_score": 62.0,
         },
         {
             "school_name": "Far",
@@ -24,6 +25,7 @@ def _frame(**overrides):
             "progress8": 0.4,
             "english_maths_grade5_pct": 70.0,
             "ebacc_aps": 5.0,
+            "pastoral_score": 88.0,
         },
     ]
     for row in rows:
@@ -114,3 +116,24 @@ def test_rank_scored_frame_places_best_first_missing_last_and_breaks_ties_determ
     assert scoring.rank_scored_frame(frame)["school_name"].tolist() == [
         "Best", "Closer", "Alpha", "Zulu", "Missing"
     ]
+
+
+def test_pastoral_component_uses_absolute_0_to_100_score_not_candidate_minmax():
+    result = scoring.score_school_frame(_frame(), SchoolPreferences(pastoral_care=1))
+    assert result[scoring.score_column(PreferenceMetric.PASTORAL_CARE)].tolist() == [62.0, 88.0]
+    assert result["preference_score"].tolist() == [62.0, 88.0]
+
+
+def test_percentage_normalisation_rejects_out_of_range_values():
+    result = scoring._normalise_percentage(pd.Series([-1, 0, 50, 100, 101, None]))
+    assert pd.isna(result.iloc[0])
+    assert result.iloc[1:4].tolist() == [0.0, 50.0, 100.0]
+    assert pd.isna(result.iloc[4])
+    assert pd.isna(result.iloc[5])
+
+
+def test_optional_pastoral_metric_can_be_absent_from_older_candidate_frame():
+    frame = _frame().drop(columns=["pastoral_score"])
+    result = scoring.score_school_frame(frame, SchoolPreferences(pastoral_care=1))
+    assert result["preference_score"].isna().all()
+    assert result["preference_score_coverage_pct"].eq(0).all()

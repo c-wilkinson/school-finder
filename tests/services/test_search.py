@@ -64,13 +64,32 @@ def _school_row(**overrides):
         "ofsted_personal_development": None,
         "ofsted_leadership": None,
         "performance_year": "202425",
+        "pupil_count": 200,
         "attainment8": 50.2,
+        "attainment8_english": 10.4,
+        "attainment8_maths": 9.9,
+        "attainment8_ebacc": 13.7,
+        "attainment8_open": 16.2,
         "english_maths_grade5_pct": 55.0,
         "english_maths_grade4_pct": 75.0,
         "ebacc_entry_pct": 40.0,
+        "ebacc_grade5_pct": 22.0,
+        "ebacc_grade4_pct": 35.0,
         "ebacc_aps": 4.5,
+        "triple_science_entry_pct": 30.0,
+        "multiple_languages_entry_pct": 10.0,
+        "gcse_entries_per_pupil": 7.5,
+        "qualification_entries_per_pupil": 8.0,
+        "progress8_pupil_count": 180,
         "progress8": 0.17,
+        "progress8_english": 0.2,
+        "progress8_maths": 0.1,
+        "progress8_ebacc": 0.15,
+        "progress8_open": 0.23,
         "progress8_year": "202324",
+        "pastoral_score": 75.0,
+        "pastoral_response_count": 40,
+        "pastoral_score_coverage_pct": 100.0,
     }
     row.update(overrides)
     return row
@@ -79,6 +98,7 @@ def _school_row(**overrides):
 def _run_find(monkeypatch, rows, request=None, postcode=None):
     monkeypatch.setattr(service, "require_pyarrow", lambda: None)
     monkeypatch.setattr(pd, "read_parquet", lambda *a, **k: pd.DataFrame(rows))
+    monkeypatch.setattr(service, "refresh_parent_view_for_frame", lambda frame: frame)
     return service.find_schools(
         Path("schools.parquet"),
         postcode or PostcodeLocation("SW1A 2AA", 462000, 149000, True),
@@ -215,6 +235,7 @@ def test_minimum_ofsted_uses_rating_order_and_excludes_unknown(monkeypatch):
         ("progress8", "minimum_progress8", 0.0, {"Equal", "Above"}),
         ("english_maths_grade5_pct", "minimum_grade5_english_maths_pct", 50.0, {"Equal", "Above"}),
         ("ebacc_aps", "minimum_ebacc_aps", 4.0, {"Equal", "Above"}),
+        ("pastoral_score", "minimum_pastoral_score", 70.0, {"Equal", "Above"}),
     ],
 )
 def test_numeric_minimum_filters_include_boundary_and_exclude_missing(monkeypatch, field, request_kw, minimum, expected):
@@ -251,6 +272,7 @@ def test_combined_filters_are_and_conditions(monkeypatch):
         (SchoolSortField.PROGRESS8, "progress8", -0.2, 0.4),
         (SchoolSortField.GRADE5_ENGLISH_MATHS, "english_maths_grade5_pct", 40.0, 70.0),
         (SchoolSortField.EBACC_APS, "ebacc_aps", 3.5, 5.2),
+        (SchoolSortField.PASTORAL_CARE, "pastoral_score", 55.0, 90.0),
     ],
 )
 def test_numeric_sort_fields_support_ascending_and_descending(monkeypatch, field, row_field, low, high):
@@ -581,3 +603,33 @@ def test_preferences_with_no_available_weighted_data_rank_missing_scores_last(mo
     result = _run_find(monkeypatch, rows, request)
     assert result["school_name"].tolist() == ["Rated", "Unrated"]
     assert pd.isna(result.iloc[1]["preference_score"])
+
+
+def test_pastoral_refresh_happens_before_filtering_and_ranking(monkeypatch):
+    monkeypatch.setattr(service, "require_pyarrow", lambda: None)
+    monkeypatch.setattr(
+        pd,
+        "read_parquet",
+        lambda *a, **k: pd.DataFrame(
+            [
+                _school_row(urn="1", school_name="Initially missing", pastoral_score=None),
+                _school_row(urn="2", school_name="Low", pastoral_score=40.0),
+            ]
+        ),
+    )
+
+    def refresh(frame):
+        refreshed = frame.copy()
+        refreshed.loc[refreshed["urn"].eq("1"), "pastoral_score"] = 85.0
+        refreshed.loc[refreshed["urn"].eq("1"), "pastoral_response_count"] = 80
+        return refreshed
+
+    monkeypatch.setattr(service, "refresh_parent_view_for_frame", refresh)
+    request = SchoolSearchRequest("X", minimum_pastoral_score=70)
+    result = service.find_schools(
+        Path("schools.parquet"),
+        PostcodeLocation("X", 463000, 150000, True),
+        request,
+    )
+    assert result["school_name"].tolist() == ["Initially missing"]
+    assert result.iloc[0]["pastoral_score"] == 85

@@ -36,6 +36,7 @@ class SchoolSearchRequest:
     minimum_progress8: float | None = None
     minimum_grade5_english_maths_pct: float | None = None
     minimum_ebacc_aps: float | None = None
+    minimum_pastoral_score: float | None = None
     sort: SchoolSort = field(default_factory=SchoolSort)
     preferences: SchoolPreferences | None = None
 
@@ -60,6 +61,10 @@ class SchoolSearchRequest:
             )
         if self.minimum_ebacc_aps is not None and not (0 <= self.minimum_ebacc_aps <= 10):
             raise ValueError("minimum_ebacc_aps must be between 0 and 10.")
+        if self.minimum_pastoral_score is not None and not (
+            0 <= self.minimum_pastoral_score <= 100
+        ):
+            raise ValueError("minimum_pastoral_score must be between 0 and 100.")
 
 
 @dataclass(frozen=True, slots=True)
