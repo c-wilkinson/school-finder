@@ -21,6 +21,11 @@ from school_finder.models.ofsted import derive_equivalent_ofsted_rating
 from school_finder.models.school import SchoolResult, school_result_from_flat_record
 from school_finder.models.search import PostcodeLocation, SchoolSearchRequest, SchoolSearchResult
 from school_finder.services.postcode import lookup_postcode
+from school_finder.services.scoring import (
+    SCORE_OUTPUT_COLUMNS,
+    rank_scored_frame,
+    score_school_frame,
+)
 
 NON_MAINSTREAM_TYPE_TERMS = (
     "special",
@@ -90,6 +95,13 @@ OUTPUT_COLUMNS = [
     "website",
     "telephone",
     "source_date",
+]
+
+PROGRESS8_PROVENANCE_COLUMNS = [
+    "progress8_source_urn",
+    "progress8_source_school_name",
+    "progress8_source_kind",
+    "progress8_source_link_depth",
 ]
 
 
@@ -321,7 +333,12 @@ def find_schools(
 
     eligible = _add_equivalent_ofsted(eligible)
     eligible = _apply_filters(eligible, request)
-    eligible = _sort_schools(eligible, request).head(request.limit).copy()
+    if request.preferences is not None:
+        eligible = score_school_frame(eligible, request.preferences)
+        eligible = rank_scored_frame(eligible)
+    else:
+        eligible = _sort_schools(eligible, request)
+    eligible = eligible.head(request.limit).copy()
     eligible["distance_miles"] = eligible["distance_miles"].round(2)
     eligible["address"] = eligible.apply(build_address, axis=1)
     eligible["age_range"] = (
@@ -329,7 +346,12 @@ def find_schools(
         + "–"
         + eligible["high_age"].astype("Int64").astype("string")
     )
-    return eligible[OUTPUT_COLUMNS].reset_index(drop=True)
+    output_columns = OUTPUT_COLUMNS + [
+        column
+        for column in PROGRESS8_PROVENANCE_COLUMNS + SCORE_OUTPUT_COLUMNS
+        if column in eligible.columns
+    ]
+    return eligible[output_columns].reset_index(drop=True)
 
 
 def serialisable_records(frame: pd.DataFrame) -> list[dict[str, Any]]:

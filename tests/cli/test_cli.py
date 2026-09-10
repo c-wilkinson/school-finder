@@ -20,6 +20,7 @@ from school_finder.models.filters import (
     SelectionFilter,
     SortDirection,
 )
+from school_finder.models.preferences import PreferencePreset, SchoolPreferences
 from school_finder.models.school import SchoolIdentity, SchoolResult
 from school_finder.models.search import PostcodeLocation, SchoolSearchRequest, SchoolSearchResult
 
@@ -70,6 +71,13 @@ def _lookup_args(**overrides):
         minimum_progress8=None,
         minimum_grade5_english_maths_pct=None,
         minimum_ebacc_aps=None,
+        preference_preset=None,
+        weight_distance=None,
+        weight_ofsted=None,
+        weight_attainment8=None,
+        weight_progress8=None,
+        weight_grade5_english_maths=None,
+        weight_ebacc_aps=None,
         sort=SchoolSortField.DISTANCE,
         descending=False,
         json=False,
@@ -96,6 +104,8 @@ def test_create_parser_build_and_lookup_defaults():
     assert lookup.gender == []
     assert lookup.faith is FaithFilter.ANY
     assert lookup.selection is SelectionFilter.ANY
+    assert lookup.preference_preset is None
+    assert lookup.weight_distance is None
     assert lookup.sort is SchoolSortField.DISTANCE
     assert lookup.descending is False
 
@@ -119,6 +129,13 @@ def test_parser_accepts_all_search_filters_case_insensitively():
         "--minimum-progress8", "-0.2",
         "--minimum-grade5-english-maths", "50",
         "--minimum-ebacc-aps", "4.1",
+        "--preference-preset", "academic",
+        "--weight-distance", "7",
+        "--weight-ofsted", "8",
+        "--weight-attainment8", "9",
+        "--weight-progress8", "10",
+        "--weight-grade5-english-maths", "11",
+        "--weight-ebacc-aps", "12",
         "--sort", "grade5_english_maths",
         "--descending",
     ])
@@ -134,6 +151,13 @@ def test_parser_accepts_all_search_filters_case_insensitively():
     assert args.minimum_progress8 == -0.2
     assert args.minimum_grade5_english_maths_pct == 50
     assert args.minimum_ebacc_aps == 4.1
+    assert args.preference_preset is PreferencePreset.ACADEMIC
+    assert args.weight_distance == 7
+    assert args.weight_ofsted == 8
+    assert args.weight_attainment8 == 9
+    assert args.weight_progress8 == 10
+    assert args.weight_grade5_english_maths == 11
+    assert args.weight_ebacc_aps == 12
     assert args.sort is SchoolSortField.GRADE5_ENGLISH_MATHS
     assert args.descending is True
 
@@ -240,6 +264,8 @@ def test_run_lookup_passes_all_search_request_fields(monkeypatch):
         minimum_progress8=0.1,
         minimum_grade5_english_maths_pct=60,
         minimum_ebacc_aps=4.5,
+        preference_preset=PreferencePreset.BALANCED,
+        weight_distance=30,
         sort=SchoolSortField.ATTAINMENT8,
         descending=True,
         json=True,
@@ -263,6 +289,14 @@ def test_run_lookup_passes_all_search_request_fields(monkeypatch):
         minimum_grade5_english_maths_pct=60,
         minimum_ebacc_aps=4.5,
         sort=SchoolSort(SchoolSortField.ATTAINMENT8, SortDirection.DESC),
+        preferences=SchoolPreferences(
+            distance=30,
+            ofsted=20,
+            attainment8=20,
+            progress8=20,
+            grade5_english_maths=15,
+            ebacc_aps=5,
+        ),
     )
 
 
@@ -299,3 +333,50 @@ def test_run_build_prints_postcodes_when_only_postcodes_updated(monkeypatch, cap
     args = argparse.Namespace(data_dir=tmp_path, force=False, onspd_item_id=None, json=False)
     cli._run_build(args)
     assert "Updated: postcodes.parquet" in capsys.readouterr().out
+
+
+def test_preferences_from_args_returns_none_when_no_scoring_requested():
+    assert cli._preferences_from_args(_lookup_args()) is None
+
+
+def test_preferences_from_args_supports_custom_weights():
+    preferences = cli._preferences_from_args(_lookup_args(
+        weight_distance=3,
+        weight_ofsted=2,
+        weight_attainment8=5,
+    ))
+    assert preferences == SchoolPreferences(distance=3, ofsted=2, attainment8=5)
+
+
+def test_preferences_from_args_uses_preset_and_allows_overrides():
+    preferences = cli._preferences_from_args(_lookup_args(
+        preference_preset=PreferencePreset.CLOSEST,
+        weight_distance=50,
+        weight_progress8=20,
+    ))
+    assert preferences == SchoolPreferences(
+        distance=50,
+        ofsted=10,
+        attainment8=5,
+        progress8=20,
+        grade5_english_maths=5,
+        ebacc_aps=5,
+    )
+
+
+def test_preferences_from_args_custom_preset_requires_weight():
+    with pytest.raises(ValueError, match="At least one preference weight"):
+        cli._preferences_from_args(_lookup_args(preference_preset=PreferencePreset.CUSTOM))
+
+
+def test_run_lookup_table_includes_preference_score_when_present(monkeypatch, capsys):
+    result = _lookup_result()
+    flat = dict(result.flat_records[0])
+    flat["preference_score"] = 82.5
+    flat["preference_score_coverage_pct"] = 100.0
+    scored_result = SchoolSearchResult(result.request, result.postcode, result.schools, (flat,))
+    monkeypatch.setattr(cli, "search_schools", lambda *a, **k: scored_result)
+    cli._run_lookup(_lookup_args())
+    out = capsys.readouterr().out
+    assert "preference_score" in out
+    assert "82.5" in out

@@ -14,6 +14,7 @@ from school_finder.models.filters import (
     SchoolSort,
     SelectionFilter,
 )
+from school_finder.models.preferences import SchoolPreferences
 from school_finder.models.school import SchoolResult
 
 
@@ -36,6 +37,7 @@ class SchoolSearchRequest:
     minimum_grade5_english_maths_pct: float | None = None
     minimum_ebacc_aps: float | None = None
     sort: SchoolSort = field(default_factory=SchoolSort)
+    preferences: SchoolPreferences | None = None
 
     def __post_init__(self) -> None:
         if not self.postcode.strip():
