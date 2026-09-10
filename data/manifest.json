@@ -1,6 +1,6 @@
 {
   "coverage": "England",
-  "dataset_version": "gias-2026-09-07__onspd-2026-08",
+  "dataset_version": "gias-2026-09-10__onspd-2026-08",
   "files": {
     "postcodes.parquet": {
       "bytes": 63252765,
@@ -21,7 +21,7 @@
       "sha256": "a2fdc3559da5b49464b6f84c02158d241dd9592561931e62adc81cd012539aee"
     },
     "schools.parquet": {
-      "bytes": 1989003,
+      "bytes": 2433732,
       "columns": [
         "urn",
         "school_name",
@@ -34,6 +34,8 @@
         "high_age",
         "gender",
         "religious_character",
+        "religious_ethos",
+        "faith_status",
         "admissions_policy",
         "street",
         "locality",
@@ -57,6 +59,10 @@
         "ofsted_attendance_behaviour",
         "ofsted_personal_development",
         "ofsted_leadership",
+        "ofsted_source_urn",
+        "ofsted_source_school_name",
+        "ofsted_source_kind",
+        "ofsted_source_link_depth",
         "performance_year",
         "attainment8",
         "english_maths_grade5_pct",
@@ -66,17 +72,22 @@
         "progress8",
         "progress8_year"
       ],
-      "rows": 26486,
-      "sha256": "126f3883a030a541a3b6d36f9ed2e60b780fca6c7e0544c98b189c5ae0788725"
+      "rows": 26482,
+      "sha256": "3d73c2b2830404e52dff580dd936ae1acdbefe29ef212ccdcf590b369ed29586"
     }
   },
-  "generated_at": "2026-09-07T17:21:03.899532Z",
-  "schema_version": 3,
+  "generated_at": "2026-09-10T08:47:47.376066Z",
+  "schema_version": 4,
   "sources": {
     "gias": {
-      "download_url": "https://ea-edubase-api-prod.azurewebsites.net/edubase/downloads/public/edubasealldata20260907.csv",
+      "download_url": "https://ea-edubase-api-prod.azurewebsites.net/edubase/downloads/public/edubasealldata20260910.csv",
       "name": "Get Information About Schools",
-      "source_date": "2026-09-07"
+      "source_date": "2026-09-10"
+    },
+    "gias_links": {
+      "download_url": "https://ea-edubase-api-prod.azurewebsites.net/edubase/downloads/public/links_edubasealldata20260910.csv",
+      "name": "Get Information About Schools establishment links",
+      "source_date": "2026-09-10"
     },
     "ks4_performance": {
       "download_url": "https://api.education.gov.uk/statistics/v1/data-sets/19e39901-a96c-be76-b9c2-6af54ae076d2/csv",
@@ -84,14 +95,19 @@
       "release_label": "EES dataset 19e39901-a96c-be76-b9c2-6af54ae076d2 (latest)"
     },
     "ofsted": {
-      "download_url": "https://assets.publishing.service.gov.uk/media/6a75d6aa5a472b60f4ea6d63/Management_information_-_state-funded_schools_-_latest_inspections_as_at_31_July_2026.csv",
+      "download_url": "https://assets.publishing.service.gov.uk/media/6aa0175392e72b8ac437ef37/Management_information_-_state-funded_schools_-_latest_inspections_as_at_31_August_2026.csv",
       "name": "Ofsted state-funded school inspections",
-      "release_label": "Management information - state-funded schools - latest inspections as at 31 July 2026"
+      "release_label": "Management information - state-funded schools - latest inspections as at 31 August 2026"
     },
     "ofsted_independent": {
-      "download_url": "https://assets.publishing.service.gov.uk/media/6a2145f456e988a798b38604/Management_information_-_non-association_independent_schools_most_recent_inspections_data_as_at_30_April_2026.csv",
+      "download_url": "https://assets.publishing.service.gov.uk/media/6a9947b6f5b35599aec19149/Management_information_-_non-association_independent_schools_most_recent_inspections_data_as_at_31_July_2026.csv",
       "name": "Ofsted non-association independent school inspections",
-      "release_label": "Management information - non-association independent schools - as at 30 April 2026: most recent inspections data as at 30 April 2026"
+      "release_label": "Management information - non-association independent schools - as at 31 July 2026: most recent inspections data as at 31 July 2026"
+    },
+    "ofsted_legacy": {
+      "download_url": "https://assets.publishing.service.gov.uk/media/69120166bda892e068aa6443/Management_information_-_state-funded_schools_-_latest_inspections_as_at_31_October_2025.csv",
+      "name": "Ofsted state-funded school inspections (legacy snapshot)",
+      "release_label": "Management information - state-funded schools - latest inspections as at 31 October 2025"
     },
     "onspd": {
       "arcgis_item_id": "9e5a92a3cfb14dc7ad43d6ea7a7b8c7f",

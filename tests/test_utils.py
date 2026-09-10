@@ -21,6 +21,6 @@ def test_iso_utc_converts_offset_and_uses_z_suffix():
 
 
 def test_normalise_and_format_postcode():
-    assert utils.normalise_postcode(" rg22  6sx ") == "RG226SX"
-    assert utils.format_postcode("rg226sx") == "RG22 6SX"
+    assert utils.normalise_postcode(" sw1a 2aa ") == "SW1A2AA"
+    assert utils.format_postcode("sw1a2aa") == "SW1A 2AA"
     assert utils.format_postcode("AB") == "AB"

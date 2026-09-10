@@ -71,6 +71,28 @@ def test_parquet_module_imports_pyarrow_components_when_available(monkeypatch):
         assert reloaded.pa is fake_pa
         assert reloaded.pq is fake_pq
 
+    # Restore the module to the actual environment for any following tests.
     sys.modules.pop("pyarrow", None)
     sys.modules.pop("pyarrow.parquet", None)
+    importlib.reload(parquet)
+
+
+def test_parquet_module_handles_pyarrow_import_error(monkeypatch):
+    import builtins
+    import importlib
+
+    real_import = builtins.__import__
+
+    def import_without_pyarrow(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "pyarrow" or name.startswith("pyarrow."):
+            raise ImportError("PyArrow deliberately unavailable for test")
+        return real_import(name, globals, locals, fromlist, level)
+
+    with monkeypatch.context() as context:
+        context.setattr(builtins, "__import__", import_without_pyarrow)
+        reloaded = importlib.reload(parquet)
+        assert reloaded.pa is None
+        assert reloaded.pq is None
+
+    # Restore the module using the real environment for following tests.
     importlib.reload(parquet)

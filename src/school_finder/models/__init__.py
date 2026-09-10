@@ -1,43 +1,38 @@
-"""Application-facing data contracts."""
+"""Application data contracts."""
 
-from school_finder.models.school import (
-    AcademicPerformance,
-    AdmissionsInformation,
-    AttendanceStatistics,
-    BehaviourStatistics,
-    InspectionSummary,
-    SchoolBenchmarks,
-    SchoolIdentity,
-    SchoolLocation,
-    SchoolResult,
-    SchoolResultSet,
-    TravelInformation,
-    UserAssessment,
-    WorkforceStatistics,
-    school_result_from_flat_record,
+from school_finder.models.filters import (
+    FaithFilter,
+    OfstedRating,
+    SchoolGender,
+    SchoolPhase,
+    SchoolSector,
+    SchoolSort,
+    SchoolSortField,
+    SelectionFilter,
+    SortDirection,
 )
-from school_finder.models.search import (
-    PostcodeLocation,
-    SchoolSearchRequest,
-    SchoolSearchResult,
+from school_finder.models.ofsted import (
+    OfstedEquivalent,
+    OfstedEquivalentBasis,
+    derive_equivalent_ofsted_rating,
 )
+from school_finder.models.school import SchoolResult
+from school_finder.models.search import SchoolSearchRequest, SchoolSearchResult
 
 __all__ = [
-    "AcademicPerformance",
-    "AdmissionsInformation",
-    "AttendanceStatistics",
-    "BehaviourStatistics",
-    "InspectionSummary",
-    "PostcodeLocation",
-    "SchoolBenchmarks",
-    "SchoolIdentity",
-    "SchoolLocation",
+    "FaithFilter",
+    "OfstedEquivalent",
+    "OfstedEquivalentBasis",
+    "OfstedRating",
+    "SchoolGender",
+    "SchoolPhase",
     "SchoolResult",
-    "SchoolResultSet",
     "SchoolSearchRequest",
     "SchoolSearchResult",
-    "TravelInformation",
-    "UserAssessment",
-    "WorkforceStatistics",
-    "school_result_from_flat_record",
+    "SchoolSector",
+    "SchoolSort",
+    "SchoolSortField",
+    "SelectionFilter",
+    "SortDirection",
+    "derive_equivalent_ofsted_rating",
 ]

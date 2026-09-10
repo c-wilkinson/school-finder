@@ -100,7 +100,7 @@ def test_match_onspd_fields_recognises_aliases():
 
 def test_detect_onspd_header_finds_header_after_preamble(tmp_path):
     archive_path = tmp_path / "x.zip"
-    content = "metadata\nmore metadata\nPCDS,DOTERM,OSEAST1M,OSNRTH1M,CTRY\nRG22 6SX,,462000,149000,E92000001\n"
+    content = "metadata\nmore metadata\nPCDS,DOTERM,OSEAST1M,OSNRTH1M,CTRY\nSW1A 2AA,,462000,149000,E92000001\n"
     with zipfile.ZipFile(archive_path, "w") as zf:
         zf.writestr("data.csv", content)
     with zipfile.ZipFile(archive_path) as zf:
@@ -119,7 +119,7 @@ def test_detect_onspd_header_returns_empty_when_unrecognised(tmp_path):
 
 def test_select_onspd_members_prefers_multi_csv(tmp_path):
     archive_path = tmp_path / "x.zip"
-    header = "PCDS,DOTERM,OSEAST1M,OSNRTH1M,CTRY\nRG22 6SX,,1,1,E92000001\n"
+    header = "PCDS,DOTERM,OSEAST1M,OSNRTH1M,CTRY\nSW1A 2AA,,1,1,E92000001\n"
     with zipfile.ZipFile(archive_path, "w") as zf:
         zf.writestr("single.csv", header)
         zf.writestr("multi_csv/a.csv", header)
@@ -131,7 +131,7 @@ def test_select_onspd_members_prefers_multi_csv(tmp_path):
 
 def test_select_onspd_members_prefers_largest_full_uk(tmp_path):
     archive_path = tmp_path / "x.zip"
-    header = "PCDS,DOTERM,OSEAST1M,OSNRTH1M,CTRY\nRG22 6SX,,1,1,E92000001\n"
+    header = "PCDS,DOTERM,OSEAST1M,OSNRTH1M,CTRY\nSW1A 2AA,,1,1,E92000001\n"
     with zipfile.ZipFile(archive_path, "w") as zf:
         zf.writestr("ONSPD_UK_small.csv", header)
         zf.writestr("ONSPD_UK_large.csv", header + ("X" * 1000))
@@ -153,10 +153,10 @@ def test_read_onspd_member_filters_to_valid_english_rows(tmp_path):
     archive_path = tmp_path / "x.zip"
     content = (
         "PCDS,DOTERM,OSEAST1M,OSNRTH1M,CTRY,DOINTR,LAT,LONG\n"
-        "RG22 6SX,,462000,149000,E92000001,202001,51.2,-1.1\n"
-        "RG22 6SY,202401,462100,149100,England,202001,51.3,-1.2\n"
+        "SW1A 2AA,,462000,149000,E92000001,202001,51.2,-1.1\n"
+        "SW1A 2AY,202401,462100,149100,England,202001,51.3,-1.2\n"
         "CF10 1AA,,318000,176000,W92000004,202001,51.4,-3.2\n"
-        "RG22 6SZ,,0,149200,E92000001,202001,51.5,-1.3\n"
+        "SW1A 2AZ,,0,149200,E92000001,202001,51.5,-1.3\n"
     )
     with zipfile.ZipFile(archive_path, "w") as zf:
         zf.writestr("data.csv", content)
@@ -164,7 +164,7 @@ def test_read_onspd_member_filters_to_valid_english_rows(tmp_path):
     with zipfile.ZipFile(archive_path) as zf:
         chunks = list(onspd.read_onspd_member(zf, "data.csv", fields, 0, _source()))
     result = pd.concat(chunks, ignore_index=True)
-    assert result["postcode_key"].tolist() == ["RG226SX", "RG226SY"]
+    assert result["postcode_key"].tolist() == ["SW1A2AA", "SW1A2AY"]
     assert result["is_current"].tolist() == [True, False]
     assert set(result["country_code"]) == {onspd.ENGLAND_COUNTRY_CODE}
 
@@ -223,7 +223,7 @@ def test_detect_onspd_header_stops_after_ten_rows(tmp_path):
 
 def test_select_onspd_members_skips_directories_and_non_csv_and_uses_sorted_fallback(tmp_path):
     archive_path = tmp_path / "x.zip"
-    header = "PCDS,DOTERM,OSEAST1M,OSNRTH1M,CTRY\nRG22 6SX,,1,1,E92000001\n"
+    header = "PCDS,DOTERM,OSEAST1M,OSNRTH1M,CTRY\nSW1A 2AA,,1,1,E92000001\n"
     with zipfile.ZipFile(archive_path, "w") as zf:
         zf.writestr("folder/", "")
         zf.writestr("notes.txt", "ignore")
@@ -257,7 +257,7 @@ def test_read_onspd_member_yields_nothing_for_non_english_chunk(tmp_path):
 
 def test_read_onspd_member_yields_nothing_when_english_coordinates_invalid(tmp_path):
     archive_path = tmp_path / "x.zip"
-    content = "PCDS,DOTERM,OSEAST1M,OSNRTH1M,CTRY\nRG22 6SX,,0,0,E92000001\n"
+    content = "PCDS,DOTERM,OSEAST1M,OSNRTH1M,CTRY\nSW1A 2AA,,0,0,E92000001\n"
     with zipfile.ZipFile(archive_path, "w") as zf: zf.writestr("data.csv", content)
     fields = onspd.match_onspd_fields(content.splitlines()[0].split(","))
     with zipfile.ZipFile(archive_path) as zf:
