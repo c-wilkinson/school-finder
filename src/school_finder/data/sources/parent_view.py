@@ -691,7 +691,6 @@ def fetch_latest_parent_view_school(
             return current
 
     best_insufficient = current
-    visited: set[str] = {source_url.rstrip("/")}
 
     for school_id, tab, survey_year in targets:
         if current_target == (school_id, tab):
@@ -701,10 +700,6 @@ def fetch_latest_parent_view_school(
         candidate = _survey_result_url(
             source_url, school_id, tab, print_view=True
         )
-        key = candidate.rstrip("/")
-        if key in visited:
-            continue
-        visited.add(key)
         historical = _fetch_live_page(session, candidate)
         if historical is None:
             continue

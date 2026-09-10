@@ -622,3 +622,105 @@ def test_survey_targets_are_found_even_when_tab_url_has_fragment_or_non_year_lab
     )
     assert (12191, 17, None) in targets
     assert (12191, 15, "2024/25") in targets
+
+
+def test_live_parser_helpers_cover_label_percentage_and_date_edge_cases():
+    assert parent_view._value_after_label(["Responses for year: 42"], "Responses for year") == "42"
+    assert parent_view._value_after_label(["Responses for year:"], "Responses for year") is None
+    assert parent_view._positive_from_segment("1. My child is happy") is None
+
+    slash = "Figures based on 20 responses up to 03/06/2026"
+    assert parent_view._latest_figures_date(slash).isoformat() == "2026-06-03"
+
+    invalid = "Figures based on 20 responses up to 31/02/2026"
+    assert parent_view._latest_figures_date(invalid) is None
+
+
+def test_live_parser_ignores_year_shaped_response_count_candidate():
+    html = (
+        "<html><body>"
+        "<div>Responses for this school: 2025/26</div>"
+        "<div>Responses for year: 42</div>"
+        "</body></html>"
+    )
+    result, _ = parent_view.read_parent_view_live_html(
+        html,
+        urn="100001",
+        source_url="https://parentview.ofsted.gov.uk/parent-view-results/urn/100001",
+    )
+    assert result.iloc[0]["pastoral_response_count"] == 42
+
+
+def test_survey_target_discovery_skips_current_and_probes_visible_year_tabs():
+    html = (
+        '<a href="/parent-view-results/survey/result/12191/current">Current</a>'
+        '<a href="/parent-view-results/survey/result/12191/17">Latest</a>'
+        '<span>2025/26</span><span>2024/25</span>'
+    )
+    targets = parent_view._survey_targets_from_html(
+        html,
+        "https://parentview.ofsted.gov.uk/parent-view-results/survey/result/12191/current",
+        (("https://parentview.ofsted.gov.uk/parent-view-results/survey/result/12191/current", "Current"),),
+    )
+    tabs = {tab for _, tab, _ in targets}
+    assert 17 in tabs
+    assert 9 in tabs
+    assert 19 in tabs
+
+
+def test_fetch_latest_parent_view_keeps_usable_current_if_newer_tab_is_unavailable():
+    current_url = "https://parentview.ofsted.gov.uk/parent-view-results/survey/result/1/17"
+    current_html = _live_html(
+        responses=40,
+        links=(("/parent-view-results/survey/result/1/18", "2026/27"),),
+    )
+    session = LiveSession(
+        [
+            LiveResponse(current_html, current_url),
+            requests.ConnectionError("offline"),
+        ]
+    )
+    row = parent_view.fetch_latest_parent_view_school(session, "100001").iloc[0]
+    assert row["pastoral_response_count"] == 40
+    assert pd.notna(row["pastoral_score"])
+
+
+def test_fetch_latest_parent_view_keeps_largest_insufficient_survey():
+    current_url = "https://parentview.ofsted.gov.uk/parent-view-results/survey/result/1/17"
+    older_url = "https://parentview.ofsted.gov.uk/parent-view-results/survey/result-print/1/15"
+    current_html = _live_html(
+        responses=1,
+        links=(("/parent-view-results/survey/result/1/15", "2024/25"),),
+    )
+    session = LiveSession(
+        [
+            LiveResponse(current_html, current_url),
+            LiveResponse(_live_html(responses=5, old=True), older_url),
+        ]
+    )
+    row = parent_view.fetch_latest_parent_view_school(session, "100001").iloc[0]
+    assert row["pastoral_response_count"] == 5
+    assert pd.isna(row["pastoral_score"])
+
+
+def test_refresh_parent_view_handles_blank_urn_empty_live_result_and_partial_success(monkeypatch):
+    frame = pd.DataFrame(
+        [
+            {"urn": "", "pastoral_score": None},
+            {"urn": "1", "pastoral_score": None},
+            {"urn": "2", "pastoral_score": None},
+        ]
+    )
+
+    def fetch(session, urn):
+        if urn == "1":
+            return pd.DataFrame()
+        return pd.DataFrame(
+            [{"urn": "2", "pastoral_score": 81.0, "pastoral_response_count": 40}]
+        )
+
+    monkeypatch.setattr(parent_view, "fetch_latest_parent_view_school", fetch)
+    result = parent_view.refresh_parent_view_for_frame(frame, session=LiveSession([]))
+    assert pd.isna(result.iloc[0]["pastoral_score"])
+    assert pd.isna(result.iloc[1]["pastoral_score"])
+    assert result.iloc[2]["pastoral_score"] == 81.0
