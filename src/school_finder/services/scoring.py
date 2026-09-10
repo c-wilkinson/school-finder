@@ -14,6 +14,7 @@ _METRIC_COLUMNS = {
     PreferenceMetric.PROGRESS8: "progress8",
     PreferenceMetric.GRADE5_ENGLISH_MATHS: "english_maths_grade5_pct",
     PreferenceMetric.EBACC_APS: "ebacc_aps",
+    PreferenceMetric.PASTORAL_CARE: "pastoral_score",
 }
 
 _OFSTED_COMPONENT_SCORES = {
@@ -69,26 +70,44 @@ def _normalise_ofsted(series: pd.Series) -> pd.Series:
     return lowered.map(_OFSTED_COMPONENT_SCORES).astype("Float64")
 
 
+def _normalise_percentage(series: pd.Series) -> pd.Series:
+    values = pd.to_numeric(series, errors="coerce").astype("Float64")
+    valid = values.between(0, 100, inclusive="both")
+    result = pd.Series(pd.NA, index=series.index, dtype="Float64")
+    result.loc[valid] = values.loc[valid]
+    return result
+
+
+def _metric_series(frame: pd.DataFrame, metric: PreferenceMetric) -> pd.Series:
+    column = _METRIC_COLUMNS[metric]
+    if column in frame.columns:
+        return frame[column]
+    return pd.Series(pd.NA, index=frame.index, dtype="Float64")
+
+
 def _component_scores(frame: pd.DataFrame) -> dict[PreferenceMetric, pd.Series]:
     return {
         PreferenceMetric.DISTANCE: _normalise_numeric(
-            frame[_METRIC_COLUMNS[PreferenceMetric.DISTANCE]],
+            _metric_series(frame, PreferenceMetric.DISTANCE),
             lower_is_better=True,
         ),
         PreferenceMetric.OFSTED: _normalise_ofsted(
-            frame[_METRIC_COLUMNS[PreferenceMetric.OFSTED]]
+            _metric_series(frame, PreferenceMetric.OFSTED)
         ),
         PreferenceMetric.ATTAINMENT8: _normalise_numeric(
-            frame[_METRIC_COLUMNS[PreferenceMetric.ATTAINMENT8]]
+            _metric_series(frame, PreferenceMetric.ATTAINMENT8)
         ),
         PreferenceMetric.PROGRESS8: _normalise_numeric(
-            frame[_METRIC_COLUMNS[PreferenceMetric.PROGRESS8]]
+            _metric_series(frame, PreferenceMetric.PROGRESS8)
         ),
         PreferenceMetric.GRADE5_ENGLISH_MATHS: _normalise_numeric(
-            frame[_METRIC_COLUMNS[PreferenceMetric.GRADE5_ENGLISH_MATHS]]
+            _metric_series(frame, PreferenceMetric.GRADE5_ENGLISH_MATHS)
         ),
         PreferenceMetric.EBACC_APS: _normalise_numeric(
-            frame[_METRIC_COLUMNS[PreferenceMetric.EBACC_APS]]
+            _metric_series(frame, PreferenceMetric.EBACC_APS)
+        ),
+        PreferenceMetric.PASTORAL_CARE: _normalise_percentage(
+            _metric_series(frame, PreferenceMetric.PASTORAL_CARE)
         ),
     }
 

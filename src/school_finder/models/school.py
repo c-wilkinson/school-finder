@@ -42,20 +42,33 @@ class SchoolLocation:
 @dataclass(frozen=True, slots=True)
 class AcademicPerformance:
     data_year: str | None = None
+    pupil_count: int | None = None
+    attainment8: float | None = None
+    attainment8_english: float | None = None
+    attainment8_maths: float | None = None
+    attainment8_ebacc: float | None = None
+    attainment8_open: float | None = None
+    english_maths_grade5_pct: float | None = None
+    english_maths_grade4_pct: float | None = None
+    ebacc_entry_pct: float | None = None
+    ebacc_grade5_pct: float | None = None
+    ebacc_grade4_pct: float | None = None
+    ebacc_aps: float | None = None
+    triple_science_entry_pct: float | None = None
+    multiple_languages_entry_pct: float | None = None
+    gcse_entries_per_pupil: float | None = None
+    qualification_entries_per_pupil: float | None = None
+    progress8_pupil_count: int | None = None
     progress8: float | None = None
+    progress8_english: float | None = None
+    progress8_maths: float | None = None
+    progress8_ebacc: float | None = None
+    progress8_open: float | None = None
     progress8_year: str | None = None
     progress8_source_urn: str | None = None
     progress8_source_school_name: str | None = None
     progress8_source_kind: str | None = None
     progress8_source_link_depth: int | None = None
-    english_maths_grade5_pct: float | None = None
-    english_maths_grade4_pct: float | None = None
-    attainment8: float | None = None
-    attainment8_english: float | None = None
-    attainment8_maths: float | None = None
-    attainment8_other: float | None = None
-    ebacc_entry_pct: float | None = None
-    ebacc_aps: float | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,6 +95,29 @@ class InspectionSummary:
     @property
     def inspection_year(self) -> int | None:
         return self.inspection_date.year if self.inspection_date else None
+
+
+@dataclass(frozen=True, slots=True)
+class PastoralCareStatistics:
+    response_count: int | None = None
+    survey_year: str | None = None
+    questionnaire_version: str | None = None
+    happy_pct: float | None = None
+    safe_pct: float | None = None
+    behaviour_positive_pct: float | None = None
+    bullying_dealt_with_pct: float | None = None
+    send_support_pct: float | None = None
+    communication_pct: float | None = None
+    concerns_dealt_with_pct: float | None = None
+    best_interests_pct: float | None = None
+    learning_support_pct: float | None = None
+    personal_development_pct: float | None = None
+    recommend_pct: float | None = None
+    score: float | None = None
+    coverage_pct: float | None = None
+    as_at_date: date | None = None
+    source: str | None = None
+    source_url: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -162,6 +198,46 @@ class WorkforceStatistics:
 
 
 @dataclass(frozen=True, slots=True)
+class DestinationStatistics:
+    pupil_count: int | None = None
+    sustained_destination_pct: float | None = None
+    education_pct: float | None = None
+    apprenticeship_pct: float | None = None
+    employment_pct: float | None = None
+    not_sustained_pct: float | None = None
+    unknown_pct: float | None = None
+    leaver_year: str | None = None
+    destination_year: str | None = None
+    source: str | None = None
+    source_dataset_id: str | None = None
+    source_urn: str | None = None
+    source_school_name: str | None = None
+    source_kind: str | None = None
+    source_link_depth: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class SubjectResult:
+    urn: str
+    data_year: str | None = None
+    subject: str | None = None
+    qualification: str | None = None
+    grade_structure: str | None = None
+    entries: int | None = None
+    grade4_plus: int | None = None
+    grade4_plus_pct: float | None = None
+    grade5_plus: int | None = None
+    grade5_plus_pct: float | None = None
+    grade7_plus: int | None = None
+    grade7_plus_pct: float | None = None
+    source: str | None = None
+    source_dataset_id: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return _serialise(self)
+
+
+@dataclass(frozen=True, slots=True)
 class AdmissionsInformation:
     policy: str | None = None
     selective: bool | None = None
@@ -221,9 +297,11 @@ class SchoolResult:
     location: SchoolLocation = field(default_factory=SchoolLocation)
     academics: AcademicPerformance = field(default_factory=AcademicPerformance)
     inspection: InspectionSummary = field(default_factory=InspectionSummary)
+    pastoral: PastoralCareStatistics = field(default_factory=PastoralCareStatistics)
     attendance: AttendanceStatistics = field(default_factory=AttendanceStatistics)
     behaviour: BehaviourStatistics = field(default_factory=BehaviourStatistics)
     workforce: WorkforceStatistics = field(default_factory=WorkforceStatistics)
+    destinations: DestinationStatistics = field(default_factory=DestinationStatistics)
     admissions: AdmissionsInformation = field(default_factory=AdmissionsInformation)
     travel: TravelInformation = field(default_factory=TravelInformation)
     preference_score: SchoolScore | None = None
@@ -246,6 +324,7 @@ class SchoolBenchmarks:
     attendance: AttendanceStatistics = field(default_factory=AttendanceStatistics)
     behaviour: BehaviourStatistics = field(default_factory=BehaviourStatistics)
     workforce: WorkforceStatistics = field(default_factory=WorkforceStatistics)
+    destinations: DestinationStatistics = field(default_factory=DestinationStatistics)
 
     def to_dict(self) -> dict[str, Any]:
         return _serialise(self)
@@ -307,24 +386,33 @@ def school_result_from_flat_record(record: Mapping[str, Any]) -> SchoolResult:
         ),
         academics=AcademicPerformance(
             data_year=_as_str(record.get("performance_year")),
-            progress8=_as_float(record.get("progress8")),
-            progress8_year=_as_str(record.get("progress8_year")),
-            progress8_source_urn=_as_str(record.get("progress8_source_urn")),
-            progress8_source_school_name=_as_str(
-                record.get("progress8_source_school_name")
-            ),
-            progress8_source_kind=_as_str(record.get("progress8_source_kind")),
-            progress8_source_link_depth=_as_int(
-                record.get("progress8_source_link_depth")
-            ),
-            english_maths_grade5_pct=_as_float(record.get("english_maths_grade5_pct")),
-            english_maths_grade4_pct=_as_float(record.get("english_maths_grade4_pct")),
+            pupil_count=_as_int(record.get("pupil_count")),
             attainment8=_as_float(record.get("attainment8")),
             attainment8_english=_as_float(record.get("attainment8_english")),
             attainment8_maths=_as_float(record.get("attainment8_maths")),
-            attainment8_other=_as_float(record.get("attainment8_other")),
+            attainment8_ebacc=_as_float(record.get("attainment8_ebacc")),
+            attainment8_open=_as_float(record.get("attainment8_open")),
+            english_maths_grade5_pct=_as_float(record.get("english_maths_grade5_pct")),
+            english_maths_grade4_pct=_as_float(record.get("english_maths_grade4_pct")),
             ebacc_entry_pct=_as_float(record.get("ebacc_entry_pct")),
+            ebacc_grade5_pct=_as_float(record.get("ebacc_grade5_pct")),
+            ebacc_grade4_pct=_as_float(record.get("ebacc_grade4_pct")),
             ebacc_aps=_as_float(record.get("ebacc_aps")),
+            triple_science_entry_pct=_as_float(record.get("triple_science_entry_pct")),
+            multiple_languages_entry_pct=_as_float(record.get("multiple_languages_entry_pct")),
+            gcse_entries_per_pupil=_as_float(record.get("gcse_entries_per_pupil")),
+            qualification_entries_per_pupil=_as_float(record.get("qualification_entries_per_pupil")),
+            progress8_pupil_count=_as_int(record.get("progress8_pupil_count")),
+            progress8=_as_float(record.get("progress8")),
+            progress8_english=_as_float(record.get("progress8_english")),
+            progress8_maths=_as_float(record.get("progress8_maths")),
+            progress8_ebacc=_as_float(record.get("progress8_ebacc")),
+            progress8_open=_as_float(record.get("progress8_open")),
+            progress8_year=_as_str(record.get("progress8_year")),
+            progress8_source_urn=_as_str(record.get("progress8_source_urn")),
+            progress8_source_school_name=_as_str(record.get("progress8_source_school_name")),
+            progress8_source_kind=_as_str(record.get("progress8_source_kind")),
+            progress8_source_link_depth=_as_int(record.get("progress8_source_link_depth")),
         ),
         inspection=InspectionSummary(
             rating=_as_str(record.get("ofsted_rating")),
@@ -345,6 +433,27 @@ def school_result_from_flat_record(record: Mapping[str, Any]) -> SchoolResult:
             personal_development=_as_str(record.get("ofsted_personal_development")),
             leadership=_as_str(record.get("ofsted_leadership")),
             adjusted_score=_as_float(record.get("ofsted_adjusted_score")),
+        ),
+        pastoral=PastoralCareStatistics(
+            response_count=_as_int(record.get("pastoral_response_count")),
+            survey_year=_as_str(record.get("parent_view_survey_year")),
+            questionnaire_version=_as_str(record.get("parent_view_questionnaire_version")),
+            happy_pct=_as_float(record.get("happy_pct")),
+            safe_pct=_as_float(record.get("safe_pct")),
+            behaviour_positive_pct=_as_float(record.get("behaviour_positive_pct")),
+            bullying_dealt_with_pct=_as_float(record.get("bullying_dealt_with_pct")),
+            send_support_pct=_as_float(record.get("send_support_pct")),
+            communication_pct=_as_float(record.get("communication_pct")),
+            concerns_dealt_with_pct=_as_float(record.get("concerns_dealt_with_pct")),
+            best_interests_pct=_as_float(record.get("best_interests_pct")),
+            learning_support_pct=_as_float(record.get("learning_support_pct")),
+            personal_development_pct=_as_float(record.get("personal_development_pct")),
+            recommend_pct=_as_float(record.get("recommend_pct")),
+            score=_as_float(record.get("pastoral_score")),
+            coverage_pct=_as_float(record.get("pastoral_score_coverage_pct")),
+            as_at_date=_as_date(record.get("parent_view_as_at_date")),
+            source=_as_str(record.get("pastoral_source")),
+            source_url=_as_str(record.get("pastoral_source_url")),
         ),
         attendance=AttendanceStatistics(
             enrolments=_as_int(record.get("attendance_enrolments")),
@@ -408,6 +517,23 @@ def school_result_from_flat_record(record: Mapping[str, Any]) -> SchoolResult:
             source_kind=_as_str(record.get("workforce_source_kind")),
             source_link_depth=_as_int(record.get("workforce_source_link_depth")),
         ),
+        destinations=DestinationStatistics(
+            pupil_count=_as_int(record.get("destination_pupil_count")),
+            sustained_destination_pct=_as_float(record.get("sustained_destination_pct")),
+            education_pct=_as_float(record.get("education_destination_pct")),
+            apprenticeship_pct=_as_float(record.get("apprenticeship_destination_pct")),
+            employment_pct=_as_float(record.get("employment_destination_pct")),
+            not_sustained_pct=_as_float(record.get("not_sustained_destination_pct")),
+            unknown_pct=_as_float(record.get("unknown_destination_pct")),
+            leaver_year=_as_str(record.get("destination_leaver_year")),
+            destination_year=_as_str(record.get("destination_year")),
+            source=_as_str(record.get("destination_source")),
+            source_dataset_id=_as_str(record.get("destination_source_dataset_id")),
+            source_urn=_as_str(record.get("destination_source_urn")),
+            source_school_name=_as_str(record.get("destination_source_school_name")),
+            source_kind=_as_str(record.get("destination_source_kind")),
+            source_link_depth=_as_int(record.get("destination_source_link_depth")),
+        ),
         admissions=AdmissionsInformation(
             policy=_as_str(record.get("admissions_policy")),
             selective=_as_bool(record.get("selective")),
@@ -444,17 +570,29 @@ def school_benchmark_from_flat_record(record: Mapping[str, Any]) -> SchoolBenchm
         source_dataset_id=_as_str(record.get("source_dataset_id")),
         academics=AcademicPerformance(
             data_year=_as_str(record.get("performance_year")),
-            progress8=_as_float(record.get("progress8")),
-            progress8_year=_as_str(record.get("progress8_year")),
-            english_maths_grade5_pct=_as_float(
-                record.get("english_maths_grade5_pct")
-            ),
-            english_maths_grade4_pct=_as_float(
-                record.get("english_maths_grade4_pct")
-            ),
+            pupil_count=_as_int(record.get("pupil_count")),
             attainment8=_as_float(record.get("attainment8")),
+            attainment8_english=_as_float(record.get("attainment8_english")),
+            attainment8_maths=_as_float(record.get("attainment8_maths")),
+            attainment8_ebacc=_as_float(record.get("attainment8_ebacc")),
+            attainment8_open=_as_float(record.get("attainment8_open")),
+            english_maths_grade5_pct=_as_float(record.get("english_maths_grade5_pct")),
+            english_maths_grade4_pct=_as_float(record.get("english_maths_grade4_pct")),
             ebacc_entry_pct=_as_float(record.get("ebacc_entry_pct")),
+            ebacc_grade5_pct=_as_float(record.get("ebacc_grade5_pct")),
+            ebacc_grade4_pct=_as_float(record.get("ebacc_grade4_pct")),
             ebacc_aps=_as_float(record.get("ebacc_aps")),
+            triple_science_entry_pct=_as_float(record.get("triple_science_entry_pct")),
+            multiple_languages_entry_pct=_as_float(record.get("multiple_languages_entry_pct")),
+            gcse_entries_per_pupil=_as_float(record.get("gcse_entries_per_pupil")),
+            qualification_entries_per_pupil=_as_float(record.get("qualification_entries_per_pupil")),
+            progress8_pupil_count=_as_int(record.get("progress8_pupil_count")),
+            progress8=_as_float(record.get("progress8")),
+            progress8_english=_as_float(record.get("progress8_english")),
+            progress8_maths=_as_float(record.get("progress8_maths")),
+            progress8_ebacc=_as_float(record.get("progress8_ebacc")),
+            progress8_open=_as_float(record.get("progress8_open")),
+            progress8_year=_as_str(record.get("progress8_year")),
         ),
         attendance=AttendanceStatistics(
             enrolments=_as_int(record.get("attendance_enrolments")),
@@ -506,6 +644,40 @@ def school_benchmark_from_flat_record(record: Mapping[str, Any]) -> SchoolBenchm
                 record.get("workforce_ratio_source_dataset_id")
             ),
         ),
+        destinations=DestinationStatistics(
+            pupil_count=_as_int(record.get("destination_pupil_count")),
+            sustained_destination_pct=_as_float(record.get("sustained_destination_pct")),
+            education_pct=_as_float(record.get("education_destination_pct")),
+            apprenticeship_pct=_as_float(record.get("apprenticeship_destination_pct")),
+            employment_pct=_as_float(record.get("employment_destination_pct")),
+            not_sustained_pct=_as_float(record.get("not_sustained_destination_pct")),
+            unknown_pct=_as_float(record.get("unknown_destination_pct")),
+            leaver_year=_as_str(record.get("destination_leaver_year")),
+            destination_year=_as_str(record.get("destination_year")),
+            source=_as_str(record.get("destination_source")),
+            source_dataset_id=_as_str(record.get("destination_source_dataset_id")),
+        ),
+    )
+
+
+def subject_result_from_flat_record(record: Mapping[str, Any]) -> SubjectResult:
+    """Translate a canonical subject row into the application contract."""
+
+    return SubjectResult(
+        urn=_as_str(record.get("urn")) or "",
+        data_year=_as_str(record.get("data_year")),
+        subject=_as_str(record.get("subject")),
+        qualification=_as_str(record.get("qualification")),
+        grade_structure=_as_str(record.get("grade_structure")),
+        entries=_as_int(record.get("entries")),
+        grade4_plus=_as_int(record.get("grade4_plus")),
+        grade4_plus_pct=_as_float(record.get("grade4_plus_pct")),
+        grade5_plus=_as_int(record.get("grade5_plus")),
+        grade5_plus_pct=_as_float(record.get("grade5_plus_pct")),
+        grade7_plus=_as_int(record.get("grade7_plus")),
+        grade7_plus_pct=_as_float(record.get("grade7_plus_pct")),
+        source=_as_str(record.get("source")),
+        source_dataset_id=_as_str(record.get("source_dataset_id")),
     )
 
 def _preference_raw_value(
@@ -521,6 +693,7 @@ def _preference_raw_value(
         PreferenceMetric.PROGRESS8: "progress8",
         PreferenceMetric.GRADE5_ENGLISH_MATHS: "english_maths_grade5_pct",
         PreferenceMetric.EBACC_APS: "ebacc_aps",
+        PreferenceMetric.PASTORAL_CARE: "pastoral_score",
     }[metric]
     return _as_float(record.get(column))
 

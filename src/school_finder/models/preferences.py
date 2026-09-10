@@ -14,6 +14,7 @@ class PreferenceMetric(StrEnum):
     PROGRESS8 = "progress8"
     GRADE5_ENGLISH_MATHS = "grade5-english-maths"
     EBACC_APS = "ebacc-aps"
+    PASTORAL_CARE = "pastoral-care"
 
 
 class PreferencePreset(StrEnum):
@@ -21,6 +22,7 @@ class PreferencePreset(StrEnum):
     ACADEMIC = "academic"
     CLOSEST = "closest"
     OFSTED_FOCUSED = "ofsted-focused"
+    PASTORAL_FOCUSED = "pastoral-focused"
     CUSTOM = "custom"
 
 
@@ -32,6 +34,7 @@ _PRESET_WEIGHTS: dict[PreferencePreset, dict[PreferenceMetric, float]] = {
         PreferenceMetric.PROGRESS8: 20,
         PreferenceMetric.GRADE5_ENGLISH_MATHS: 15,
         PreferenceMetric.EBACC_APS: 5,
+        PreferenceMetric.PASTORAL_CARE: 0,
     },
     PreferencePreset.ACADEMIC: {
         PreferenceMetric.DISTANCE: 5,
@@ -40,6 +43,7 @@ _PRESET_WEIGHTS: dict[PreferencePreset, dict[PreferenceMetric, float]] = {
         PreferenceMetric.PROGRESS8: 30,
         PreferenceMetric.GRADE5_ENGLISH_MATHS: 20,
         PreferenceMetric.EBACC_APS: 10,
+        PreferenceMetric.PASTORAL_CARE: 0,
     },
     PreferencePreset.CLOSEST: {
         PreferenceMetric.DISTANCE: 70,
@@ -48,6 +52,7 @@ _PRESET_WEIGHTS: dict[PreferencePreset, dict[PreferenceMetric, float]] = {
         PreferenceMetric.PROGRESS8: 5,
         PreferenceMetric.GRADE5_ENGLISH_MATHS: 5,
         PreferenceMetric.EBACC_APS: 5,
+        PreferenceMetric.PASTORAL_CARE: 0,
     },
     PreferencePreset.OFSTED_FOCUSED: {
         PreferenceMetric.DISTANCE: 10,
@@ -56,6 +61,16 @@ _PRESET_WEIGHTS: dict[PreferencePreset, dict[PreferenceMetric, float]] = {
         PreferenceMetric.PROGRESS8: 10,
         PreferenceMetric.GRADE5_ENGLISH_MATHS: 5,
         PreferenceMetric.EBACC_APS: 5,
+        PreferenceMetric.PASTORAL_CARE: 0,
+    },
+    PreferencePreset.PASTORAL_FOCUSED: {
+        PreferenceMetric.DISTANCE: 10,
+        PreferenceMetric.OFSTED: 15,
+        PreferenceMetric.ATTAINMENT8: 10,
+        PreferenceMetric.PROGRESS8: 5,
+        PreferenceMetric.GRADE5_ENGLISH_MATHS: 5,
+        PreferenceMetric.EBACC_APS: 5,
+        PreferenceMetric.PASTORAL_CARE: 50,
     },
 }
 
@@ -68,6 +83,7 @@ class SchoolPreferences:
     progress8: float = 0
     grade5_english_maths: float = 0
     ebacc_aps: float = 0
+    pastoral_care: float = 0
 
     def __post_init__(self) -> None:
         weights = self.weights()
@@ -91,6 +107,7 @@ class SchoolPreferences:
             progress8=weights[PreferenceMetric.PROGRESS8],
             grade5_english_maths=weights[PreferenceMetric.GRADE5_ENGLISH_MATHS],
             ebacc_aps=weights[PreferenceMetric.EBACC_APS],
+            pastoral_care=weights[PreferenceMetric.PASTORAL_CARE],
         )
 
     def weights(self) -> dict[PreferenceMetric, float]:
@@ -101,6 +118,7 @@ class SchoolPreferences:
             PreferenceMetric.PROGRESS8: float(self.progress8),
             PreferenceMetric.GRADE5_ENGLISH_MATHS: float(self.grade5_english_maths),
             PreferenceMetric.EBACC_APS: float(self.ebacc_aps),
+            PreferenceMetric.PASTORAL_CARE: float(self.pastoral_care),
         }
 
     def normalised_weights(self) -> dict[PreferenceMetric, float]:

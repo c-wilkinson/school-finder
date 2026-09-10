@@ -7,3 +7,4 @@ if (-not (Test-Path ".venv")) {
 & .\.venv\Scripts\python.exe -m pip install --upgrade pip
 & .\.venv\Scripts\python.exe -m pip install -e ".[dev]"
 & .\.venv\Scripts\python.exe -m school_finder build
+& .\.venv\Scripts\Activate.ps1

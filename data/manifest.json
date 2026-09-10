@@ -3,20 +3,47 @@
   "dataset_version": "gias-2026-09-10__onspd-2026-08",
   "files": {
     "benchmarks.parquet": {
-      "bytes": 59262,
+      "bytes": 87172,
       "columns": [
         "benchmark_level",
         "benchmark_code",
         "performance_year",
+        "pupil_count",
         "attainment8",
+        "attainment8_english",
+        "attainment8_maths",
+        "attainment8_ebacc",
+        "attainment8_open",
         "english_maths_grade5_pct",
         "english_maths_grade4_pct",
         "ebacc_entry_pct",
+        "ebacc_grade5_pct",
+        "ebacc_grade4_pct",
         "ebacc_aps",
-        "progress8",
+        "triple_science_entry_pct",
+        "multiple_languages_entry_pct",
+        "gcse_entries_per_pupil",
+        "qualification_entries_per_pupil",
         "progress8_year",
+        "progress8_pupil_count",
+        "progress8",
+        "progress8_english",
+        "progress8_maths",
+        "progress8_ebacc",
+        "progress8_open",
         "source",
         "source_dataset_id",
+        "destination_leaver_year",
+        "destination_year",
+        "destination_pupil_count",
+        "sustained_destination_pct",
+        "education_destination_pct",
+        "apprenticeship_destination_pct",
+        "employment_destination_pct",
+        "not_sustained_destination_pct",
+        "unknown_destination_pct",
+        "destination_source",
+        "destination_source_dataset_id",
         "attendance_year",
         "attendance_enrolments",
         "overall_absence_pct",
@@ -56,7 +83,7 @@
         "benchmark_name"
       ],
       "rows": 155,
-      "sha256": "7b35e5a1765fb1afe47e04abca726827e85f2f293703feb5f0bd97194b2573e6"
+      "sha256": "f0a8291be2ce313a08e57263bd223aec83d4dc362afbcab57ca446a0db2170bb"
     },
     "postcodes.parquet": {
       "bytes": 63252765,
@@ -77,7 +104,7 @@
       "sha256": "a2fdc3559da5b49464b6f84c02158d241dd9592561931e62adc81cd012539aee"
     },
     "schools.parquet": {
-      "bytes": 4903758,
+      "bytes": 5316835,
       "columns": [
         "urn",
         "school_name",
@@ -122,12 +149,28 @@
         "performance_year",
         "local_authority_code",
         "local_authority_name",
+        "pupil_count",
         "attainment8",
+        "attainment8_english",
+        "attainment8_maths",
+        "attainment8_ebacc",
+        "attainment8_open",
         "english_maths_grade5_pct",
         "english_maths_grade4_pct",
         "ebacc_entry_pct",
+        "ebacc_grade5_pct",
+        "ebacc_grade4_pct",
         "ebacc_aps",
+        "triple_science_entry_pct",
+        "multiple_languages_entry_pct",
+        "gcse_entries_per_pupil",
+        "qualification_entries_per_pupil",
+        "progress8_pupil_count",
         "progress8",
+        "progress8_english",
+        "progress8_maths",
+        "progress8_ebacc",
+        "progress8_open",
         "progress8_year",
         "progress8_source_urn",
         "progress8_source_school_name",
@@ -180,14 +223,69 @@
         "workforce_source_urn",
         "workforce_source_school_name",
         "workforce_source_kind",
-        "workforce_source_link_depth"
+        "workforce_source_link_depth",
+        "destination_leaver_year",
+        "destination_year",
+        "destination_pupil_count",
+        "sustained_destination_pct",
+        "education_destination_pct",
+        "apprenticeship_destination_pct",
+        "employment_destination_pct",
+        "not_sustained_destination_pct",
+        "unknown_destination_pct",
+        "destination_source",
+        "destination_source_dataset_id",
+        "destination_source_urn",
+        "destination_source_school_name",
+        "destination_source_kind",
+        "destination_source_link_depth",
+        "pastoral_response_count",
+        "happy_pct",
+        "safe_pct",
+        "behaviour_positive_pct",
+        "bullying_dealt_with_pct",
+        "send_support_pct",
+        "communication_pct",
+        "concerns_dealt_with_pct",
+        "best_interests_pct",
+        "learning_support_pct",
+        "recommend_pct",
+        "personal_development_pct",
+        "pastoral_score",
+        "pastoral_score_coverage_pct",
+        "parent_view_as_at_date",
+        "parent_view_survey_year",
+        "parent_view_questionnaire_version",
+        "pastoral_source",
+        "pastoral_source_url"
       ],
       "rows": 26482,
-      "sha256": "9ff8696e25af6d538e870ed3c1bc169d75293ab2d9eb94a655b7fc463a6d821e"
+      "sha256": "00e30a6e14f37b287f8a01f662e50da173b7f9dbf435c42adb0128afeba55148"
+    },
+    "subjects.parquet": {
+      "bytes": 1037294,
+      "columns": [
+        "urn",
+        "data_year",
+        "subject",
+        "qualification",
+        "grade_structure",
+        "entries",
+        "grade4_plus",
+        "grade4_plus_pct",
+        "grade5_plus",
+        "grade5_plus_pct",
+        "grade7_plus",
+        "grade7_plus_pct",
+        "source",
+        "source_dataset_id"
+      ],
+      "rows": 102977,
+      "sha256": "e74d0435fa84e793675db7528586246d3b99c323d106e104108639d410a6cf15"
     }
   },
-  "generated_at": "2026-09-10T14:32:55.222094Z",
-  "schema_version": 7,
+  "generated_at": "2026-09-10T20:35:52.687839Z",
+  "schema_version": 8,
   "sources": {
     "attendance_benchmarks": {
       "download_url": "https://explore-education-statistics.service.gov.uk/data-catalogue/data-set/d37f27c4-cca2-4274-97e9-1cdcb4ecad18/csv",
@@ -209,6 +307,21 @@
       "name": "DfE suspensions and permanent exclusions - school level",
       "release_label": "EES dataset a4b5a46f-5bed-42b5-91b8-93620a04001e (2024/25 academic year)"
     },
+    "destinations_local_authority": {
+      "download_url": "https://explore-education-statistics.service.gov.uk/data-catalogue/data-set/29097d0c-dddd-4983-9afb-18a2bdce7099/csv",
+      "name": "DfE Key stage 4 destinations - local authority",
+      "release_label": "EES dataset 29097d0c-dddd-4983-9afb-18a2bdce7099 (latest)"
+    },
+    "destinations_national": {
+      "download_url": "https://explore-education-statistics.service.gov.uk/data-catalogue/data-set/771e2b11-ef92-4885-acb9-f4ae2881ca41/csv",
+      "name": "DfE Key stage 4 destinations - national",
+      "release_label": "EES dataset 771e2b11-ef92-4885-acb9-f4ae2881ca41 (latest)"
+    },
+    "destinations_school": {
+      "download_url": "https://explore-education-statistics.service.gov.uk/data-catalogue/data-set/7be58881-d49f-4e3b-b2b6-0877a1a0fe6e/csv",
+      "name": "DfE Key stage 4 destinations - school level",
+      "release_label": "EES dataset 7be58881-d49f-4e3b-b2b6-0877a1a0fe6e (latest)"
+    },
     "gias": {
       "download_url": "https://ea-edubase-api-prod.azurewebsites.net/edubase/downloads/public/edubasealldata20260910.csv",
       "name": "Get Information About Schools",
@@ -228,6 +341,11 @@
       "download_url": "https://api.education.gov.uk/statistics/v1/data-sets/19e39901-a96c-be76-b9c2-6af54ae076d2/csv",
       "name": "DfE Key stage 4 performance",
       "release_label": "EES dataset 19e39901-a96c-be76-b9c2-6af54ae076d2 (latest)"
+    },
+    "ks4_subjects": {
+      "download_url": "https://api.education.gov.uk/statistics/v1/data-sets/1ae39901-b462-df76-b108-640a078d7944/csv",
+      "name": "DfE Key stage 4 subject entries and grades",
+      "release_label": "EES dataset 1ae39901-b462-df76-b108-640a078d7944 (latest)"
     },
     "ofsted": {
       "download_url": "https://assets.publishing.service.gov.uk/media/6aa0175392e72b8ac437ef37/Management_information_-_state-funded_schools_-_latest_inspections_as_at_31_August_2026.csv",
@@ -253,6 +371,11 @@
       "name": "ONS Postcode Directory",
       "release_date": "2026-08-01",
       "title": "ONS Postcode Directory (August 2026)"
+    },
+    "parent_view_school": {
+      "download_url": "https://assets.publishing.service.gov.uk/media/6a2a8c0415f2a70fac7e5d74/Parent_View_Management_Information_as_at_6_April_2026.ods",
+      "name": "Ofsted Parent View management information",
+      "release_label": "Parent View management information as at 6 April 2026"
     },
     "workforce_benchmarks": {
       "download_url": "https://explore-education-statistics.service.gov.uk/data-catalogue/data-set/47006239-5f46-4c97-8ae0-38fd288d1c1e/csv",

@@ -16,6 +16,7 @@ from school_finder.config import (
     MANIFEST_SCHEMA_VERSION,
     POSTCODES_FILENAME,
     SCHOOLS_FILENAME,
+    SUBJECTS_FILENAME,
 )
 from school_finder.errors import SchoolFinderError
 from school_finder.data.manifest import (
@@ -41,6 +42,13 @@ from school_finder.data.sources.behaviour import (
     read_behaviour_benchmarks,
     read_behaviour_school,
 )
+from school_finder.data.sources.destinations import (
+    discover_destination_la_source,
+    discover_destination_national_source,
+    discover_destination_school_source,
+    read_destination_benchmarks,
+    read_destination_school,
+)
 from school_finder.data.sources.gias import (
     clean_gias_data,
     clean_gias_links_data,
@@ -52,6 +60,10 @@ from school_finder.data.sources.gias import (
     read_gias_links_csv,
 )
 from school_finder.data.sources.ks4 import discover_ks4_source, read_ks4_quality
+from school_finder.data.sources.ks4_subjects import (
+    discover_ks4_subject_source,
+    read_ks4_subjects,
+)
 from school_finder.data.sources.ks4_benchmarks import (
     discover_ks4_benchmark_source,
     read_ks4_benchmarks,
@@ -63,6 +75,10 @@ from school_finder.data.sources.workforce import (
     discover_workforce_school_source,
     read_workforce_benchmarks,
     read_workforce_school,
+)
+from school_finder.data.sources.parent_view import (
+    discover_parent_view_source,
+    read_parent_view_school,
 )
 from school_finder.data.sources.ofsted import (
     discover_latest_independent_ofsted_source,
@@ -85,6 +101,7 @@ class BuildResult:
     manifest_updated: bool
     manifest: dict[str, Any]
     benchmarks_updated: bool = False
+    subjects_updated: bool = False
 
 
 def combine_ofsted_quality(*frames: pd.DataFrame) -> pd.DataFrame:
@@ -118,12 +135,38 @@ KS4_PERFORMANCE_COLUMNS = (
     "performance_year",
     "local_authority_code",
     "local_authority_name",
+    "pupil_count",
     "attainment8",
+    "attainment8_english",
+    "attainment8_maths",
+    "attainment8_ebacc",
+    "attainment8_open",
     "english_maths_grade5_pct",
     "english_maths_grade4_pct",
     "ebacc_entry_pct",
+    "ebacc_grade5_pct",
+    "ebacc_grade4_pct",
     "ebacc_aps",
+    "triple_science_entry_pct",
+    "multiple_languages_entry_pct",
+    "gcse_entries_per_pupil",
+    "qualification_entries_per_pupil",
+    "progress8_pupil_count",
     "progress8",
+    "progress8_english",
+    "progress8_maths",
+    "progress8_ebacc",
+    "progress8_open",
+    "progress8_year",
+)
+
+PROGRESS8_METRIC_COLUMNS = (
+    "progress8_pupil_count",
+    "progress8",
+    "progress8_english",
+    "progress8_maths",
+    "progress8_ebacc",
+    "progress8_open",
     "progress8_year",
 )
 
@@ -177,6 +220,42 @@ WORKFORCE_COLUMNS = (
     "workforce_source_dataset_id",
     "workforce_ratio_source",
     "workforce_ratio_source_dataset_id",
+)
+
+PASTORAL_COLUMNS = (
+    "parent_view_as_at_date",
+    "parent_view_survey_year",
+    "parent_view_questionnaire_version",
+    "pastoral_response_count",
+    "happy_pct",
+    "safe_pct",
+    "behaviour_positive_pct",
+    "bullying_dealt_with_pct",
+    "send_support_pct",
+    "communication_pct",
+    "concerns_dealt_with_pct",
+    "best_interests_pct",
+    "learning_support_pct",
+    "personal_development_pct",
+    "recommend_pct",
+    "pastoral_score",
+    "pastoral_score_coverage_pct",
+    "pastoral_source",
+    "pastoral_source_url",
+)
+
+DESTINATION_COLUMNS = (
+    "destination_leaver_year",
+    "destination_year",
+    "destination_pupil_count",
+    "sustained_destination_pct",
+    "education_destination_pct",
+    "apprenticeship_destination_pct",
+    "employment_destination_pct",
+    "not_sustained_destination_pct",
+    "unknown_destination_pct",
+    "destination_source",
+    "destination_source_dataset_id",
 )
 
 
@@ -494,8 +573,8 @@ def resolve_progress8_lineage(
                 link_depth += 1
                 candidate_row = performance_rows.get(predecessor_urn)
                 if candidate_row is not None and pd.notna(candidate_row.get("progress8")):
-                    record["progress8"] = candidate_row.get("progress8")
-                    record["progress8_year"] = candidate_row.get("progress8_year", pd.NA)
+                    for column in PROGRESS8_METRIC_COLUMNS:
+                        record[column] = candidate_row.get(column, pd.NA)
                     source_urn = predecessor_urn
                     source_kind = "predecessor"
                     depth = link_depth
@@ -546,10 +625,11 @@ def enrich_school_context(
     attendance: pd.DataFrame,
     behaviour: pd.DataFrame,
     workforce: pd.DataFrame,
+    destinations: pd.DataFrame | None = None,
     *,
     links: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
-    domains = (
+    domains = [
         (
             attendance,
             ATTENDANCE_COLUMNS,
@@ -568,7 +648,16 @@ def enrich_school_context(
             ("pupil_fte", "teacher_fte", "support_staff_fte"),
             "workforce",
         ),
-    )
+    ]
+    if destinations is not None:
+        domains.append(
+            (
+                destinations,
+                DESTINATION_COLUMNS,
+                ("destination_pupil_count", "sustained_destination_pct"),
+                "destination",
+            )
+        )
     enriched = schools
     for frame, columns, quality_columns, prefix in domains:
         resolved = (
@@ -587,6 +676,14 @@ def enrich_school_context(
     return enriched
 
 
+def enrich_school_pastoral(
+    schools: pd.DataFrame,
+    pastoral: pd.DataFrame,
+) -> pd.DataFrame:
+    """Attach current-URN Parent View data without inheriting predecessor opinions."""
+    return schools.merge(pastoral, on="urn", how="left", validate="one_to_one")
+
+
 def build_datasets(
     data_dir: Path,
     *,
@@ -600,6 +697,7 @@ def build_datasets(
     schools_path = data_dir / SCHOOLS_FILENAME
     postcodes_path = data_dir / POSTCODES_FILENAME
     benchmarks_path = data_dir / BENCHMARKS_FILENAME
+    subjects_path = data_dir / SUBJECTS_FILENAME
     existing_manifest = read_manifest(manifest_path)
 
     session = create_session()
@@ -615,12 +713,17 @@ def build_datasets(
     legacy_ofsted_source = discover_latest_legacy_ofsted_source(session)
     independent_ofsted_source = discover_latest_independent_ofsted_source(session)
     ks4_source = discover_ks4_source(session)
+    ks4_subject_source = discover_ks4_subject_source(session)
+    destination_source = discover_destination_school_source(session)
     attendance_source = discover_attendance_school_source(session)
     behaviour_source = discover_behaviour_school_source(session)
     workforce_source = discover_workforce_school_source(session)
     workforce_ratio_source = discover_workforce_ratio_school_source(session)
+    parent_view_source = discover_parent_view_source(session)
 
     ks4_benchmark_source = discover_ks4_benchmark_source(session)
+    destination_national_source = discover_destination_national_source(session)
+    destination_la_source = discover_destination_la_source(session)
     attendance_benchmark_source = discover_attendance_benchmark_source(session)
     behaviour_benchmark_source = discover_behaviour_benchmark_source(session)
     workforce_benchmark_source = discover_workforce_benchmark_source(session)
@@ -633,11 +736,16 @@ def build_datasets(
     legacy_ofsted_source_manifest = csv_source_manifest(legacy_ofsted_source)
     independent_ofsted_source_manifest = csv_source_manifest(independent_ofsted_source)
     ks4_source_manifest = csv_source_manifest(ks4_source)
+    ks4_subject_source_manifest = csv_source_manifest(ks4_subject_source)
+    destination_source_manifest = csv_source_manifest(destination_source)
     attendance_source_manifest = csv_source_manifest(attendance_source)
     behaviour_source_manifest = csv_source_manifest(behaviour_source)
     workforce_source_manifest = csv_source_manifest(workforce_source)
     workforce_ratio_source_manifest = csv_source_manifest(workforce_ratio_source)
+    parent_view_source_manifest = csv_source_manifest(parent_view_source)
     ks4_benchmark_source_manifest = csv_source_manifest(ks4_benchmark_source)
+    destination_national_source_manifest = csv_source_manifest(destination_national_source)
+    destination_la_source_manifest = csv_source_manifest(destination_la_source)
     attendance_benchmark_source_manifest = csv_source_manifest(attendance_benchmark_source)
     behaviour_benchmark_source_manifest = csv_source_manifest(behaviour_benchmark_source)
     workforce_benchmark_source_manifest = csv_source_manifest(workforce_benchmark_source)
@@ -656,10 +764,24 @@ def build_datasets(
         and source_matches(existing_manifest, "ofsted_legacy", legacy_ofsted_source_manifest, ("release_label", "download_url"))
         and source_matches(existing_manifest, "ofsted_independent", independent_ofsted_source_manifest, ("release_label", "download_url"))
         and source_matches(existing_manifest, "ks4_performance", ks4_source_manifest, ("release_label", "download_url"))
+        and source_matches(existing_manifest, "destinations_school", destination_source_manifest, ("release_label", "download_url"))
         and source_matches(existing_manifest, "attendance_school", attendance_source_manifest, ("release_label", "download_url"))
         and source_matches(existing_manifest, "behaviour_school", behaviour_source_manifest, ("release_label", "download_url"))
         and source_matches(existing_manifest, "workforce_school", workforce_source_manifest, ("release_label", "download_url"))
         and source_matches(existing_manifest, "workforce_ratio_school", workforce_ratio_source_manifest, ("release_label", "download_url"))
+        and source_matches(existing_manifest, "parent_view_school", parent_view_source_manifest, ("release_label", "download_url"))
+    )
+    subjects_current = (
+        not force
+        and subjects_path.exists()
+        and existing_manifest is not None
+        and existing_manifest.get("schema_version") == MANIFEST_SCHEMA_VERSION
+        and source_matches(
+            existing_manifest,
+            "ks4_subjects",
+            ks4_subject_source_manifest,
+            ("release_label", "download_url"),
+        )
     )
     postcodes_current = (
         not force
@@ -679,6 +801,8 @@ def build_datasets(
         and existing_manifest is not None
         and existing_manifest.get("schema_version") == MANIFEST_SCHEMA_VERSION
         and source_matches(existing_manifest, "ks4_benchmarks", ks4_benchmark_source_manifest, ("release_label", "download_url"))
+        and source_matches(existing_manifest, "destinations_national", destination_national_source_manifest, ("release_label", "download_url"))
+        and source_matches(existing_manifest, "destinations_local_authority", destination_la_source_manifest, ("release_label", "download_url"))
         and source_matches(existing_manifest, "attendance_benchmarks", attendance_benchmark_source_manifest, ("release_label", "download_url"))
         and source_matches(existing_manifest, "behaviour_benchmarks", behaviour_benchmark_source_manifest, ("release_label", "download_url"))
         and source_matches(existing_manifest, "workforce_benchmarks", workforce_benchmark_source_manifest, ("release_label", "download_url"))
@@ -689,10 +813,11 @@ def build_datasets(
         schools_current
         and postcodes_current
         and benchmarks_current
+        and subjects_current
         and existing_manifest is not None
     ):
         log("Datasets are current; leaving all files unchanged.")
-        return BuildResult(False, False, False, existing_manifest, False)
+        return BuildResult(False, False, False, existing_manifest, False, False)
 
     with tempfile.TemporaryDirectory(
         prefix=".school-finder-build-",
@@ -702,6 +827,7 @@ def build_datasets(
         staged_schools: Path | None = None
         staged_postcodes: Path | None = None
         staged_benchmarks: Path | None = None
+        staged_subjects: Path | None = None
 
         if schools_current:
             log(f"GIAS source unchanged; keeping {schools_path}.")
@@ -727,6 +853,8 @@ def build_datasets(
             behaviour_csv = temp_dir / "behaviour.csv"
             workforce_csv = temp_dir / "workforce.csv"
             workforce_ratio_csv = temp_dir / "workforce_ratios.csv"
+            destination_csv = temp_dir / "destinations.csv"
+            parent_view_ods = temp_dir / "parent_view.ods"
             download_csv(session, ofsted_source, ofsted_csv)
             download_csv(session, legacy_ofsted_source, legacy_ofsted_csv)
             download_csv(session, independent_ofsted_source, independent_ofsted_csv)
@@ -735,6 +863,8 @@ def build_datasets(
             download_csv(session, behaviour_source, behaviour_csv)
             download_csv(session, workforce_source, workforce_csv)
             download_csv(session, workforce_ratio_source, workforce_ratio_csv)
+            download_csv(session, destination_source, destination_csv)
+            download_csv(session, parent_view_source, parent_view_ods, minimum_size=100_000)
             log("Enriching schools with Ofsted and DfE performance data...")
             ofsted = combine_ofsted_quality(
                 read_ofsted_quality(legacy_ofsted_csv),
@@ -747,14 +877,17 @@ def build_datasets(
                 read_ks4_quality(ks4_csv),
                 links=gias_links,
             )
-            log("Enriching schools with attendance, behaviour and workforce data...")
+            log("Enriching schools with attendance, behaviour, workforce and destination data...")
             schools = enrich_school_context(
                 schools,
                 read_attendance_school(attendance_csv),
                 read_behaviour_school(behaviour_csv),
                 read_workforce_school(workforce_csv, workforce_ratio_csv),
+                read_destination_school(destination_csv),
                 links=gias_links,
             )
+            log("Enriching schools with Ofsted Parent View pastoral-care data...")
+            schools = enrich_school_pastoral(schools, read_parent_view_school(parent_view_ods))
             if len(schools) < 10_000:
                 raise SchoolFinderError(
                     f"GIAS produced only {len(schools):,} open establishments; "
@@ -763,6 +896,19 @@ def build_datasets(
             staged_schools = temp_dir / SCHOOLS_FILENAME
             log(f"Staging {SCHOOLS_FILENAME} ({len(schools):,} rows)...")
             write_parquet_file(schools, staged_schools)
+
+        if subjects_current:
+            log(f"DfE subject source unchanged; keeping {subjects_path}.")
+        else:
+            subject_csv = temp_dir / "ks4_subjects.csv"
+            download_csv(session, ks4_subject_source, subject_csv)
+            log("Cleaning school-level KS4 subject results...")
+            subjects = read_ks4_subjects(subject_csv)
+            if subjects.empty:
+                raise SchoolFinderError("DfE KS4 subject data produced no usable rows.")
+            staged_subjects = temp_dir / SUBJECTS_FILENAME
+            log(f"Staging {SUBJECTS_FILENAME} ({len(subjects):,} rows)...")
+            write_parquet_file(subjects, staged_subjects)
 
         if postcodes_current:
             log(f"ONSPD source unchanged; keeping {postcodes_path}.")
@@ -779,11 +925,15 @@ def build_datasets(
             log(f"DfE benchmark source unchanged; keeping {benchmarks_path}.")
         else:
             benchmark_csv = temp_dir / "ks4_benchmarks.csv"
+            destination_national_csv = temp_dir / "destination_national.csv"
+            destination_la_csv = temp_dir / "destination_local_authority.csv"
             attendance_benchmark_csv = temp_dir / "attendance_benchmarks.csv"
             behaviour_benchmark_csv = temp_dir / "behaviour_benchmarks.csv"
             workforce_benchmark_csv = temp_dir / "workforce_benchmarks.csv"
             workforce_ratio_benchmark_csv = temp_dir / "workforce_ratio_benchmarks.csv"
             download_csv(session, ks4_benchmark_source, benchmark_csv)
+            download_csv(session, destination_national_source, destination_national_csv)
+            download_csv(session, destination_la_source, destination_la_csv)
             download_csv(session, attendance_benchmark_source, attendance_benchmark_csv)
             download_csv(session, behaviour_benchmark_source, behaviour_benchmark_csv)
             download_csv(session, workforce_benchmark_source, workforce_benchmark_csv)
@@ -795,6 +945,7 @@ def build_datasets(
             log("Cleaning national and local-authority benchmark data...")
             benchmarks = combine_benchmarks(
                 read_ks4_benchmarks(benchmark_csv),
+                read_destination_benchmarks(destination_national_csv, destination_la_csv),
                 read_attendance_benchmarks(attendance_benchmark_csv),
                 read_behaviour_benchmarks(behaviour_benchmark_csv),
                 read_workforce_benchmarks(
@@ -815,6 +966,8 @@ def build_datasets(
             os.replace(staged_postcodes, postcodes_path)
         if staged_benchmarks is not None:
             os.replace(staged_benchmarks, benchmarks_path)
+        if staged_subjects is not None:
+            os.replace(staged_subjects, subjects_path)
 
     manifest = {
         "schema_version": MANIFEST_SCHEMA_VERSION,
@@ -828,6 +981,7 @@ def build_datasets(
             SCHOOLS_FILENAME: parquet_metadata(schools_path),
             POSTCODES_FILENAME: parquet_metadata(postcodes_path),
             BENCHMARKS_FILENAME: parquet_metadata(benchmarks_path),
+            SUBJECTS_FILENAME: parquet_metadata(subjects_path),
         },
         "sources": {
             "gias": gias_source_manifest,
@@ -837,11 +991,16 @@ def build_datasets(
             "ofsted_legacy": legacy_ofsted_source_manifest,
             "ofsted_independent": independent_ofsted_source_manifest,
             "ks4_performance": ks4_source_manifest,
+            "ks4_subjects": ks4_subject_source_manifest,
+            "destinations_school": destination_source_manifest,
             "attendance_school": attendance_source_manifest,
             "behaviour_school": behaviour_source_manifest,
             "workforce_school": workforce_source_manifest,
             "workforce_ratio_school": workforce_ratio_source_manifest,
+            "parent_view_school": parent_view_source_manifest,
             "ks4_benchmarks": ks4_benchmark_source_manifest,
+            "destinations_national": destination_national_source_manifest,
+            "destinations_local_authority": destination_la_source_manifest,
             "attendance_benchmarks": attendance_benchmark_source_manifest,
             "behaviour_benchmarks": behaviour_benchmark_source_manifest,
             "workforce_benchmarks": workforce_benchmark_source_manifest,
@@ -857,4 +1016,5 @@ def build_datasets(
         manifest_updated=True,
         manifest=manifest,
         benchmarks_updated=not benchmarks_current,
+        subjects_updated=not subjects_current,
     )

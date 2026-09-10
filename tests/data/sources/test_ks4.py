@@ -38,17 +38,33 @@ def test_discover_ks4_source_wraps_request_errors():
 def test_read_ks4_quality_uses_latest_headline_and_latest_numeric_progress8(tmp_path: Path):
     path = tmp_path / "ks4.csv"
     pd.DataFrame([
-        {"school_urn":"100001", "time_period":"202324", "breakdown":"Total", "attainment8_average":"48", "engmath_95_percent":"50", "engmath_94_percent":"70", "ebacc_entering_percent":"30", "ebacc_aps_average":"4.1", "progress8_average":"0.21"},
-        {"school_urn":"100001", "time_period":"202425", "breakdown":"Total", "new_la_code":"E10000014", "la_name":"Hampshire", "attainment8_average":"52.1", "engmath_95_percent":"55", "engmath_94_percent":"75", "ebacc_entering_percent":"35", "ebacc_aps_average":"4.4", "progress8_average":"z"},
+        {"school_urn":"100001", "time_period":"202324", "breakdown":"Total", "attainment8_average":"48", "engmath_95_percent":"50", "engmath_94_percent":"70", "ebacc_entering_percent":"30", "ebacc_aps_average":"4.1", "progress8_pupil_count":"180", "progress8_average":"0.21", "progress8eng_average":"0.31", "progress8mat_average":"0.11", "progress8ebacc_average":"0.18", "progress8open_average":"0.24"},
+        {"school_urn":"100001", "time_period":"202425", "breakdown":"Total", "new_la_code":"E10000014", "la_name":"Hampshire", "pupil_count":"200", "attainment8_average":"52.1", "attainment8eng_average":"10.8", "attainment8mat_average":"10.1", "attainment8ebacc_average":"14.2", "attainment8open_average":"17.0", "engmath_95_percent":"55", "engmath_94_percent":"75", "ebacc_entering_percent":"35", "ebacc_95_percent":"24", "ebacc_94_percent":"38", "ebacc_aps_average":"4.4", "sci_triple_entering_percent":"31", "lan_multiple_entering_percent":"12", "gcse_entries_average":"7.6", "qual_entries_average":"8.2", "progress8_average":"z"},
         {"school_urn":"100001", "time_period":"202425", "breakdown":"Girls", "attainment8_average":"99", "progress8_average":"1.5"},
         {"school_urn":"100002", "time_period":"202425", "breakdown":"Total", "attainment8_average":"45", "progress8_average":""},
     ]).to_csv(path, index=False)
     result = ks4.read_ks4_quality(path).set_index("urn")
     assert result.loc["100001", "performance_year"] == "202425"
+    assert result.loc["100001", "pupil_count"] == 200
     assert result.loc["100001", "attainment8"] == 52.1
+    assert result.loc["100001", "attainment8_english"] == 10.8
+    assert result.loc["100001", "attainment8_maths"] == 10.1
+    assert result.loc["100001", "attainment8_ebacc"] == 14.2
+    assert result.loc["100001", "attainment8_open"] == 17.0
+    assert result.loc["100001", "ebacc_grade5_pct"] == 24
+    assert result.loc["100001", "ebacc_grade4_pct"] == 38
+    assert result.loc["100001", "triple_science_entry_pct"] == 31
+    assert result.loc["100001", "multiple_languages_entry_pct"] == 12
+    assert result.loc["100001", "gcse_entries_per_pupil"] == 7.6
+    assert result.loc["100001", "qualification_entries_per_pupil"] == 8.2
     assert result.loc["100001", "local_authority_code"] == "E10000014"
     assert result.loc["100001", "local_authority_name"] == "Hampshire"
+    assert result.loc["100001", "progress8_pupil_count"] == 180
     assert result.loc["100001", "progress8"] == 0.21
+    assert result.loc["100001", "progress8_english"] == 0.31
+    assert result.loc["100001", "progress8_maths"] == 0.11
+    assert result.loc["100001", "progress8_ebacc"] == 0.18
+    assert result.loc["100001", "progress8_open"] == 0.24
     assert result.loc["100001", "progress8_year"] == "202324"
     assert pd.isna(result.loc["100002", "progress8"])
 
@@ -66,6 +82,13 @@ def test_read_ks4_quality_requires_headline_total_rows(tmp_path):
     with pytest.raises(SchoolFinderError, match="no all-pupils headline rows"):
         ks4.read_ks4_quality(path)
 
+
+
+def test_read_ks4_quality_requires_valid_time_period(tmp_path):
+    path = tmp_path / "ks4.csv"
+    pd.DataFrame([{"school_urn":"1", "time_period":"bad", "breakdown":"Total"}]).to_csv(path, index=False)
+    with pytest.raises(SchoolFinderError, match="no valid time periods"):
+        ks4.read_ks4_quality(path)
 
 def test_read_ks4_quality_handles_missing_optional_metric_and_progress_columns(tmp_path):
     path = tmp_path / "ks4.csv"
@@ -104,3 +127,15 @@ def test_read_ks4_quality_keeps_historic_progress_only_urns(tmp_path: Path):
     assert result.loc["OLD", "progress8"] == -0.76
     assert result.loc["OLD", "progress8_year"] == "202324"
     assert pd.isna(result.loc["OLD", "performance_year"])
+
+
+def test_read_ks4_quality_handles_progress_column_with_no_numeric_values(tmp_path: Path):
+    path = tmp_path / "ks4.csv"
+    pd.DataFrame([{
+        "school_urn": "1",
+        "time_period": "202425",
+        "breakdown": "Total",
+        "progress8_average": "z",
+    }]).to_csv(path, index=False)
+    row = ks4.read_ks4_quality(path).iloc[0]
+    assert pd.isna(row["progress8"])

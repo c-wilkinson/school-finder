@@ -22,14 +22,24 @@ from school_finder.models.preferences import (
     PreferencePreset,
     SchoolPreferences,
 )
-from school_finder.models.school import SchoolBenchmarks, SchoolResult, SchoolResultSet
+from school_finder.models.school import (
+    DestinationStatistics,
+    PastoralCareStatistics,
+    SchoolBenchmarks,
+    SchoolResult,
+    SchoolResultSet,
+    SubjectResult,
+)
 from school_finder.models.scoring import ScoreComponent, SchoolScore
 from school_finder.models.search import SchoolSearchRequest, SchoolSearchResult
 from school_finder.services.scoring import score_school_frame
 from school_finder.services.search import search_schools
+from school_finder.services.subjects import get_school_subject_results
 
 __all__ = [
     "BuildResult",
+    "DestinationStatistics",
+    "PastoralCareStatistics",
     "FaithFilter",
     "OfstedEquivalent",
     "OfstedEquivalentBasis",
@@ -51,8 +61,10 @@ __all__ = [
     "ScoreComponent",
     "SelectionFilter",
     "SortDirection",
+    "SubjectResult",
     "build_datasets",
     "derive_equivalent_ofsted_rating",
+    "get_school_subject_results",
     "score_school_frame",
     "search_schools",
 ]

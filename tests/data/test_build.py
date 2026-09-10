@@ -20,6 +20,10 @@ def _sources(monkeypatch):
     legacy_ofsted = CsvSource("Legacy Ofsted", "legacy-url", "legacy-release")
     independent = CsvSource("Independent Ofsted", "ind-url", "ind-release")
     ks4 = CsvSource("KS4", "ks4-url", "ks4-release")
+    ks4_subjects = CsvSource("KS4 subjects", "ks4-subjects-url", "ks4-subjects-release")
+    destinations = CsvSource("Destinations", "destinations-url", "destinations-release")
+    destination_national = CsvSource("Destination national", "destination-national-url", "destination-national-release")
+    destination_la = CsvSource("Destination LA", "destination-la-url", "destination-la-release")
     ks4_benchmarks = CsvSource("KS4 benchmarks", "bench-url", "bench-release")
     attendance = CsvSource("Attendance", "attendance-url", "attendance-release")
     attendance_benchmarks = CsvSource("Attendance benchmarks", "attendance-bench-url", "attendance-bench-release")
@@ -29,6 +33,7 @@ def _sources(monkeypatch):
     workforce_ratios = CsvSource("Workforce ratios", "workforce-ratio-url", "workforce-ratio-release")
     workforce_benchmarks = CsvSource("Workforce benchmarks", "workforce-bench-url", "workforce-bench-release")
     workforce_ratio_benchmarks = CsvSource("Workforce ratio benchmarks", "workforce-ratio-bench-url", "workforce-ratio-bench-release")
+    parent_view = CsvSource("Parent View", "parent-view-url", "parent-view-release")
     monkeypatch.setattr(build, "create_session", lambda: object())
     monkeypatch.setattr(build, "discover_latest_gias_source", lambda session: gias)
     monkeypatch.setattr(build, "discover_latest_gias_links_source", lambda session, today=None: gias_links)
@@ -37,10 +42,15 @@ def _sources(monkeypatch):
     monkeypatch.setattr(build, "discover_latest_legacy_ofsted_source", lambda session: legacy_ofsted)
     monkeypatch.setattr(build, "discover_latest_independent_ofsted_source", lambda session: independent)
     monkeypatch.setattr(build, "discover_ks4_source", lambda session: ks4)
+    monkeypatch.setattr(build, "discover_ks4_subject_source", lambda session: ks4_subjects)
+    monkeypatch.setattr(build, "discover_destination_school_source", lambda session: destinations)
+    monkeypatch.setattr(build, "discover_destination_national_source", lambda session: destination_national)
+    monkeypatch.setattr(build, "discover_destination_la_source", lambda session: destination_la)
     monkeypatch.setattr(build, "discover_attendance_school_source", lambda session: attendance)
     monkeypatch.setattr(build, "discover_behaviour_school_source", lambda session: behaviour)
     monkeypatch.setattr(build, "discover_workforce_school_source", lambda session: workforce)
     monkeypatch.setattr(build, "discover_workforce_ratio_school_source", lambda session: workforce_ratios)
+    monkeypatch.setattr(build, "discover_parent_view_source", lambda session: parent_view)
     monkeypatch.setattr(build, "discover_ks4_benchmark_source", lambda session: ks4_benchmarks)
     monkeypatch.setattr(build, "discover_attendance_benchmark_source", lambda session: attendance_benchmarks)
     monkeypatch.setattr(build, "discover_behaviour_benchmark_source", lambda session: behaviour_benchmarks)
@@ -59,9 +69,17 @@ def _fake_parquet_writes(monkeypatch):
 
 
 def _mock_context_readers(monkeypatch):
+    monkeypatch.setattr(build, "read_ks4_subjects", lambda path: pd.DataFrame([{"urn":"1", "subject":"Maths"}]))
+    monkeypatch.setattr(build, "read_destination_school", lambda path: pd.DataFrame(columns=["urn", *build.DESTINATION_COLUMNS]))
+    monkeypatch.setattr(
+        build,
+        "read_destination_benchmarks",
+        lambda *paths: pd.DataFrame([{"benchmark_level": "National", "benchmark_code": "E92000001", "benchmark_name": "England"}]),
+    )
     monkeypatch.setattr(build, "read_attendance_school", lambda path: pd.DataFrame(columns=["urn", *build.ATTENDANCE_COLUMNS]))
     monkeypatch.setattr(build, "read_behaviour_school", lambda path: pd.DataFrame(columns=["urn", *build.BEHAVIOUR_COLUMNS]))
     monkeypatch.setattr(build, "read_workforce_school", lambda *paths: pd.DataFrame(columns=["urn", *build.WORKFORCE_COLUMNS]))
+    monkeypatch.setattr(build, "read_parent_view_school", lambda path: pd.DataFrame(columns=["urn", *build.PASTORAL_COLUMNS]))
     monkeypatch.setattr(
         build,
         "read_attendance_benchmarks",
@@ -162,6 +180,7 @@ def test_build_returns_unchanged_when_every_source_is_current(tmp_path, monkeypa
     (tmp_path / "schools.parquet").touch()
     (tmp_path / "postcodes.parquet").touch()
     (tmp_path / "benchmarks.parquet").touch()
+    (tmp_path / "subjects.parquet").write_bytes(b"subjects")
     existing = {"schema_version": MANIFEST_SCHEMA_VERSION, "sources":{}, "sentinel":True}
     monkeypatch.setattr(build, "read_manifest", lambda path: existing)
     monkeypatch.setattr(build, "source_matches", lambda *args, **kwargs: True)
@@ -201,10 +220,12 @@ def test_build_force_rebuilds_and_publishes_both_datasets(tmp_path, monkeypatch)
     assert result.schools_updated is True
     assert result.postcodes_updated is True
     assert result.benchmarks_updated is True
+    assert result.subjects_updated is True
     assert result.manifest_updated is True
     assert (tmp_path / "schools.parquet").exists()
     assert (tmp_path / "postcodes.parquet").exists()
     assert (tmp_path / "benchmarks.parquet").exists()
+    assert (tmp_path / "subjects.parquet").exists()
     assert (tmp_path / "manifest.json").exists()
     assert result.manifest["schema_version"] == MANIFEST_SCHEMA_VERSION
     assert result.manifest["dataset_version"] == "gias-2026-09-07__onspd-2026-08"
@@ -219,6 +240,7 @@ def test_build_only_refreshes_postcodes_when_school_sources_are_current(tmp_path
     (tmp_path / "schools.parquet").write_bytes(b"existing")
     (tmp_path / "postcodes.parquet").write_bytes(b"old")
     (tmp_path / "benchmarks.parquet").write_bytes(b"benchmarks")
+    (tmp_path / "subjects.parquet").write_bytes(b"subjects")
     existing = {"schema_version": MANIFEST_SCHEMA_VERSION, "sources":{}}
     monkeypatch.setattr(build, "read_manifest", lambda path: existing)
     monkeypatch.setattr(build, "source_matches", lambda manifest, name, expected, keys: name != "onspd")
@@ -229,6 +251,7 @@ def test_build_only_refreshes_postcodes_when_school_sources_are_current(tmp_path
     assert result.schools_updated is False
     assert result.postcodes_updated is True
     assert result.benchmarks_updated is False
+    assert result.subjects_updated is False
     assert (tmp_path / "schools.parquet").read_bytes() == b"existing"
     assert (tmp_path / "benchmarks.parquet").read_bytes() == b"benchmarks"
 
@@ -241,12 +264,13 @@ def test_build_only_refreshes_schools_when_postcodes_are_current(tmp_path, monke
     (tmp_path / "schools.parquet").write_bytes(b"old")
     (tmp_path / "postcodes.parquet").write_bytes(b"existing")
     (tmp_path / "benchmarks.parquet").write_bytes(b"benchmarks")
+    (tmp_path / "subjects.parquet").write_bytes(b"subjects")
     existing = {"schema_version": MANIFEST_SCHEMA_VERSION, "sources":{}}
     monkeypatch.setattr(build, "read_manifest", lambda path: existing)
     monkeypatch.setattr(
         build,
         "source_matches",
-        lambda manifest, name, expected, keys: name in {"onspd", "ks4_benchmarks", "attendance_benchmarks", "behaviour_benchmarks", "workforce_benchmarks", "workforce_ratio_benchmarks"},
+        lambda manifest, name, expected, keys: name in {"onspd", "ks4_subjects", "ks4_benchmarks", "destinations_national", "destinations_local_authority", "attendance_benchmarks", "behaviour_benchmarks", "workforce_benchmarks", "workforce_ratio_benchmarks"},
     )
     monkeypatch.setattr(build, "download_gias_csv", lambda *a, **k: None)
     monkeypatch.setattr(build, "download_gias_links_csv", lambda *a, **k: None)
@@ -262,6 +286,7 @@ def test_build_only_refreshes_schools_when_postcodes_are_current(tmp_path, monke
     assert result.schools_updated is True
     assert result.postcodes_updated is False
     assert result.benchmarks_updated is False
+    assert result.subjects_updated is False
     assert (tmp_path / "postcodes.parquet").read_bytes() == b"existing"
     assert (tmp_path / "benchmarks.parquet").read_bytes() == b"benchmarks"
 
@@ -292,6 +317,7 @@ def test_build_only_refreshes_benchmarks_when_other_datasets_are_current(tmp_pat
     (tmp_path / "schools.parquet").write_bytes(b"schools")
     (tmp_path / "postcodes.parquet").write_bytes(b"postcodes")
     (tmp_path / "benchmarks.parquet").write_bytes(b"old")
+    (tmp_path / "subjects.parquet").write_bytes(b"subjects")
     existing = {"schema_version": MANIFEST_SCHEMA_VERSION, "sources": {}}
     monkeypatch.setattr(build, "read_manifest", lambda path: existing)
     monkeypatch.setattr(
@@ -311,6 +337,7 @@ def test_build_only_refreshes_benchmarks_when_other_datasets_are_current(tmp_pat
     assert result.schools_updated is False
     assert result.postcodes_updated is False
     assert result.benchmarks_updated is True
+    assert result.subjects_updated is False
     assert (tmp_path / "schools.parquet").read_bytes() == b"schools"
     assert (tmp_path / "postcodes.parquet").read_bytes() == b"postcodes"
     assert (tmp_path / "benchmarks.parquet").read_bytes() == b"parquet"
@@ -318,12 +345,41 @@ def test_build_only_refreshes_benchmarks_when_other_datasets_are_current(tmp_pat
     assert "ks4_benchmarks" in result.manifest["sources"]
 
 
+
+def test_build_only_refreshes_subjects_when_other_datasets_are_current(tmp_path, monkeypatch):
+    _disable_pyarrow_guard(monkeypatch)
+    _sources(monkeypatch)
+    _mock_context_readers(monkeypatch)
+    _fake_parquet_writes(monkeypatch)
+    (tmp_path / "schools.parquet").write_bytes(b"schools")
+    (tmp_path / "postcodes.parquet").write_bytes(b"postcodes")
+    (tmp_path / "benchmarks.parquet").write_bytes(b"benchmarks")
+    (tmp_path / "subjects.parquet").write_bytes(b"old")
+    existing = {"schema_version": MANIFEST_SCHEMA_VERSION, "sources": {}}
+    monkeypatch.setattr(build, "read_manifest", lambda path: existing)
+    monkeypatch.setattr(
+        build, "source_matches",
+        lambda manifest, name, expected, keys: name != "ks4_subjects",
+    )
+    monkeypatch.setattr(build, "download_csv", lambda *a, **k: None)
+
+    result = build.build_datasets(tmp_path)
+
+    assert result.schools_updated is False
+    assert result.postcodes_updated is False
+    assert result.benchmarks_updated is False
+    assert result.subjects_updated is True
+    assert (tmp_path / "subjects.parquet").read_bytes() == b"parquet"
+    assert "subjects.parquet" in result.manifest["files"]
+    assert "ks4_subjects" in result.manifest["sources"]
+
 def test_build_rejects_empty_benchmark_result(tmp_path, monkeypatch):
     _disable_pyarrow_guard(monkeypatch)
     _sources(monkeypatch)
     _mock_context_readers(monkeypatch)
     (tmp_path / "schools.parquet").touch()
     (tmp_path / "postcodes.parquet").touch()
+    (tmp_path / "subjects.parquet").touch()
     monkeypatch.setattr(build, "read_manifest", lambda path: {"schema_version": MANIFEST_SCHEMA_VERSION, "sources": {}})
     monkeypatch.setattr(
         build,
@@ -332,6 +388,7 @@ def test_build_rejects_empty_benchmark_result(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(build, "download_csv", lambda *a, **k: None)
     monkeypatch.setattr(build, "read_ks4_benchmarks", lambda path: pd.DataFrame())
+    monkeypatch.setattr(build, "read_destination_benchmarks", lambda *paths: pd.DataFrame())
     monkeypatch.setattr(build, "read_attendance_benchmarks", lambda path: pd.DataFrame())
     monkeypatch.setattr(build, "read_behaviour_benchmarks", lambda path: pd.DataFrame())
     monkeypatch.setattr(build, "read_workforce_benchmarks", lambda *paths: pd.DataFrame())
@@ -339,6 +396,21 @@ def test_build_rejects_empty_benchmark_result(tmp_path, monkeypatch):
     with pytest.raises(SchoolFinderError, match="no usable benchmark rows"):
         build.build_datasets(tmp_path)
 
+
+
+def test_build_rejects_empty_subject_result(tmp_path, monkeypatch):
+    _disable_pyarrow_guard(monkeypatch)
+    _sources(monkeypatch)
+    _mock_context_readers(monkeypatch)
+    (tmp_path / "schools.parquet").touch()
+    (tmp_path / "postcodes.parquet").touch()
+    (tmp_path / "benchmarks.parquet").touch()
+    monkeypatch.setattr(build, "read_manifest", lambda path: {"schema_version": MANIFEST_SCHEMA_VERSION, "sources": {}})
+    monkeypatch.setattr(build, "source_matches", lambda manifest, name, expected, keys: name != "ks4_subjects")
+    monkeypatch.setattr(build, "download_csv", lambda *a, **k: None)
+    monkeypatch.setattr(build, "read_ks4_subjects", lambda path: pd.DataFrame())
+    with pytest.raises(SchoolFinderError, match="subject data produced no usable rows"):
+        build.build_datasets(tmp_path)
 
 def _ofsted_row(urn, rating="Requires improvement", inspection="2023-02-07"):
     return {
