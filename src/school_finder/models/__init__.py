@@ -21,7 +21,7 @@ from school_finder.models.preferences import (
     PreferencePreset,
     SchoolPreferences,
 )
-from school_finder.models.school import SchoolResult
+from school_finder.models.school import SchoolBenchmarks, SchoolResult, SchoolResultSet
 from school_finder.models.scoring import ScoreComponent, SchoolScore
 from school_finder.models.search import SchoolSearchRequest, SchoolSearchResult
 
@@ -32,10 +32,12 @@ __all__ = [
     "OfstedRating",
     "PreferenceMetric",
     "PreferencePreset",
+    "SchoolBenchmarks",
     "SchoolGender",
     "SchoolPhase",
     "SchoolPreferences",
     "SchoolResult",
+    "SchoolResultSet",
     "SchoolScore",
     "SchoolSearchRequest",
     "SchoolSearchResult",

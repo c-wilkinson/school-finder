@@ -6,7 +6,8 @@ import pytest
 from school_finder.models import school as model
 from school_finder.models.school import (
     AcademicPerformance, AttendanceStatistics, InspectionSummary, SchoolBenchmarks,
-    SchoolResultSet, TravelInformation, WorkforceStatistics, school_result_from_flat_record,
+    SchoolResultSet, TravelInformation, WorkforceStatistics,
+    school_benchmark_from_flat_record, school_result_from_flat_record,
 )
 
 
@@ -16,6 +17,7 @@ def test_maps_all_current_and_future_canonical_fields_into_nested_contract():
         "establishment_type":"Academy", "phase":"Secondary", "age_range":"11–16",
         "gender":"Mixed", "religious_character":"None", "website":"https://example.test",
         "telephone":"0123", "address":"1 Road", "town":"Town", "postcode":"RG1 1AA",
+        "local_authority_code":"E10000014", "local_authority_name":"Hampshire",
         "easting":"1", "northing":2.4, "latitude":"51.2", "longitude":"-1.2",
         "performance_year":"202425", "progress8":"0.17", "progress8_year":"202324",
         "english_maths_grade5_pct":"55", "english_maths_grade4_pct":75,
@@ -45,6 +47,8 @@ def test_maps_all_current_and_future_canonical_fields_into_nested_contract():
     assert result.identity.urn == "123456"
     assert result.location.easting == 1
     assert result.location.northing == 2
+    assert result.location.local_authority_code == "E10000014"
+    assert result.location.local_authority_name == "Hampshire"
     assert result.academics.attainment8 == 50.2
     assert result.inspection.inspection_year == 2025
     assert result.inspection.equivalent_rating == "Good"
@@ -117,6 +121,45 @@ def test_benchmarks_are_separate_from_real_schools_and_serialise():
     assert payload["schools"][0]["identity"]["urn"] == "123456"
     assert payload["benchmarks"][0]["academics"]["attainment8"] == 45.9
     assert "identity" not in payload["benchmarks"][0]
+
+
+def test_benchmark_from_flat_record_maps_metadata_and_academics():
+    benchmark = school_benchmark_from_flat_record({
+        "benchmark_level": "Local authority",
+        "benchmark_code": "E10000014",
+        "benchmark_name": "Hampshire",
+        "source": "DfE benchmark source",
+        "source_dataset_id": "dataset-id",
+        "performance_year": "202425",
+        "progress8": "-0.01",
+        "progress8_year": "202324",
+        "english_maths_grade5_pct": "47.1",
+        "english_maths_grade4_pct": "66.2",
+        "attainment8": "46.8",
+        "ebacc_entry_pct": "39.2",
+        "ebacc_aps": "4.15",
+    })
+    assert benchmark.label == "Hampshire"
+    assert benchmark.level == "Local authority"
+    assert benchmark.code == "E10000014"
+    assert benchmark.source == "DfE benchmark source"
+    assert benchmark.source_dataset_id == "dataset-id"
+    assert benchmark.academics.data_year == "202425"
+    assert benchmark.academics.progress8 == -0.01
+    assert benchmark.academics.progress8_year == "202324"
+    assert benchmark.academics.english_maths_grade5_pct == 47.1
+    assert benchmark.academics.english_maths_grade4_pct == 66.2
+    assert benchmark.academics.attainment8 == 46.8
+    assert benchmark.academics.ebacc_entry_pct == 39.2
+    assert benchmark.academics.ebacc_aps == 4.15
+
+
+def test_benchmark_from_flat_record_handles_missing_identity_and_metrics():
+    benchmark = school_benchmark_from_flat_record({})
+    assert benchmark.label == ""
+    assert benchmark.level is None
+    assert benchmark.code is None
+    assert benchmark.academics.attainment8 is None
 
 
 def test_serialise_dates_datetimes_times_and_tuples():

@@ -13,7 +13,7 @@ from school_finder.models.filters import (
 )
 from school_finder.models.preferences import SchoolPreferences
 from school_finder.models.search import PostcodeLocation, SchoolSearchRequest, SchoolSearchResult
-from school_finder.models.school import SchoolIdentity, SchoolResult
+from school_finder.models.school import SchoolBenchmarks, SchoolIdentity, SchoolResult
 
 
 def test_search_contract_defaults_and_result_storage():
@@ -37,6 +37,15 @@ def test_search_contract_defaults_and_result_storage():
     result = SchoolSearchResult(request, postcode, (school,), ({"urn": "1"},))
     assert result.schools == (school,)
     assert result.flat_records[0]["urn"] == "1"
+    assert result.benchmarks == ()
+
+
+def test_search_result_can_store_benchmark_context():
+    request = SchoolSearchRequest("SW1A 2AA")
+    postcode = PostcodeLocation("SW1A 2AA", 1, 2, True)
+    benchmark = SchoolBenchmarks(label="England", level="National", code="E92000001")
+    result = SchoolSearchResult(request, postcode, (), (), (benchmark,))
+    assert result.benchmarks == (benchmark,)
 
 
 def test_search_contract_accepts_full_filter_set():

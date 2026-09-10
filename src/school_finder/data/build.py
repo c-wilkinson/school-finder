@@ -11,6 +11,7 @@ from typing import Any
 import pandas as pd
 
 from school_finder.config import (
+    BENCHMARKS_FILENAME,
     MANIFEST_FILENAME,
     MANIFEST_SCHEMA_VERSION,
     POSTCODES_FILENAME,
@@ -39,6 +40,10 @@ from school_finder.data.sources.gias import (
     read_gias_links_csv,
 )
 from school_finder.data.sources.ks4 import discover_ks4_source, read_ks4_quality
+from school_finder.data.sources.ks4_benchmarks import (
+    discover_ks4_benchmark_source,
+    read_ks4_benchmarks,
+)
 from school_finder.data.sources.ofsted import (
     discover_latest_independent_ofsted_source,
     discover_latest_legacy_ofsted_source,
@@ -59,6 +64,7 @@ class BuildResult:
     postcodes_updated: bool
     manifest_updated: bool
     manifest: dict[str, Any]
+    benchmarks_updated: bool = False
 
 
 def combine_ofsted_quality(*frames: pd.DataFrame) -> pd.DataFrame:
@@ -90,6 +96,8 @@ OFSTED_QUALITY_COLUMNS = (
 
 KS4_PERFORMANCE_COLUMNS = (
     "performance_year",
+    "local_authority_code",
+    "local_authority_name",
     "attainment8",
     "english_maths_grade5_pct",
     "english_maths_grade4_pct",
@@ -335,6 +343,7 @@ def build_datasets(
     manifest_path = data_dir / MANIFEST_FILENAME
     schools_path = data_dir / SCHOOLS_FILENAME
     postcodes_path = data_dir / POSTCODES_FILENAME
+    benchmarks_path = data_dir / BENCHMARKS_FILENAME
     existing_manifest = read_manifest(manifest_path)
 
     session = create_session()
@@ -350,6 +359,7 @@ def build_datasets(
     legacy_ofsted_source = discover_latest_legacy_ofsted_source(session)
     independent_ofsted_source = discover_latest_independent_ofsted_source(session)
     ks4_source = discover_ks4_source(session)
+    ks4_benchmark_source = discover_ks4_benchmark_source(session)
     gias_source_manifest = gias_manifest(gias_source)
     gias_links_source_manifest = gias_links_manifest(gias_links_source)
     onspd_source_manifest = onspd_manifest(onspd_source)
@@ -357,6 +367,7 @@ def build_datasets(
     legacy_ofsted_source_manifest = csv_source_manifest(legacy_ofsted_source)
     independent_ofsted_source_manifest = csv_source_manifest(independent_ofsted_source)
     ks4_source_manifest = csv_source_manifest(ks4_source)
+    ks4_benchmark_source_manifest = csv_source_manifest(ks4_benchmark_source)
 
     schools_current = (
         not force
@@ -412,10 +423,27 @@ def build_datasets(
             ("arcgis_item_id", "modified_at"),
         )
     )
+    benchmarks_current = (
+        not force
+        and benchmarks_path.exists()
+        and existing_manifest is not None
+        and existing_manifest.get("schema_version") == MANIFEST_SCHEMA_VERSION
+        and source_matches(
+            existing_manifest,
+            "ks4_benchmarks",
+            ks4_benchmark_source_manifest,
+            ("release_label", "download_url"),
+        )
+    )
 
-    if schools_current and postcodes_current and existing_manifest is not None:
+    if (
+        schools_current
+        and postcodes_current
+        and benchmarks_current
+        and existing_manifest is not None
+    ):
         log("Datasets are current; leaving all files unchanged.")
-        return BuildResult(False, False, False, existing_manifest)
+        return BuildResult(False, False, False, existing_manifest, False)
 
     with tempfile.TemporaryDirectory(
         prefix=".school-finder-build-",
@@ -424,6 +452,7 @@ def build_datasets(
         temp_dir = Path(temp_name)
         staged_schools: Path | None = None
         staged_postcodes: Path | None = None
+        staged_benchmarks: Path | None = None
 
         if schools_current:
             log(f"GIAS source unchanged; keeping {schools_path}.")
@@ -481,10 +510,27 @@ def build_datasets(
             log(f"Staging {POSTCODES_FILENAME} ({len(postcodes):,} rows)...")
             write_parquet_file(postcodes, staged_postcodes)
 
+        if benchmarks_current:
+            log(f"DfE benchmark source unchanged; keeping {benchmarks_path}.")
+        else:
+            benchmark_csv = temp_dir / "ks4_benchmarks.csv"
+            download_csv(session, ks4_benchmark_source, benchmark_csv)
+            log("Cleaning national and local-authority KS4 benchmarks...")
+            benchmarks = read_ks4_benchmarks(benchmark_csv)
+            if benchmarks.empty:
+                raise SchoolFinderError(
+                    "DfE KS4 benchmark data produced no usable benchmark rows."
+                )
+            staged_benchmarks = temp_dir / BENCHMARKS_FILENAME
+            log(f"Staging {BENCHMARKS_FILENAME} ({len(benchmarks):,} rows)...")
+            write_parquet_file(benchmarks, staged_benchmarks)
+
         if staged_schools is not None:
             os.replace(staged_schools, schools_path)
         if staged_postcodes is not None:
             os.replace(staged_postcodes, postcodes_path)
+        if staged_benchmarks is not None:
+            os.replace(staged_benchmarks, benchmarks_path)
 
     manifest = {
         "schema_version": MANIFEST_SCHEMA_VERSION,
@@ -497,6 +543,7 @@ def build_datasets(
         "files": {
             SCHOOLS_FILENAME: parquet_metadata(schools_path),
             POSTCODES_FILENAME: parquet_metadata(postcodes_path),
+            BENCHMARKS_FILENAME: parquet_metadata(benchmarks_path),
         },
         "sources": {
             "gias": gias_source_manifest,
@@ -506,6 +553,7 @@ def build_datasets(
             "ofsted_legacy": legacy_ofsted_source_manifest,
             "ofsted_independent": independent_ofsted_source_manifest,
             "ks4_performance": ks4_source_manifest,
+            "ks4_benchmarks": ks4_benchmark_source_manifest,
         },
     }
     log(f"Writing {manifest_path}...")
@@ -516,4 +564,5 @@ def build_datasets(
         postcodes_updated=not postcodes_current,
         manifest_updated=True,
         manifest=manifest,
+        benchmarks_updated=not benchmarks_current,
     )

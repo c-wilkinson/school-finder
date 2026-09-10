@@ -15,7 +15,7 @@ from school_finder.models.filters import (
     SelectionFilter,
 )
 from school_finder.models.preferences import SchoolPreferences
-from school_finder.models.school import SchoolResult
+from school_finder.models.school import SchoolBenchmarks, SchoolResult
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,3 +79,4 @@ class SchoolSearchResult:
     flat_records: tuple[Mapping[str, Any], ...] = field(
         default=(), repr=False, compare=False
     )
+    benchmarks: tuple[SchoolBenchmarks, ...] = ()

@@ -10,6 +10,7 @@ from pathlib import Path
 import pandas as pd
 
 from school_finder.config import (
+    BENCHMARKS_FILENAME,
     DEFAULT_DATA_DIR,
     MANIFEST_FILENAME,
     POSTCODES_FILENAME,
@@ -100,7 +101,7 @@ def create_parser() -> argparse.ArgumentParser:
 
     build = commands.add_parser(
         "build",
-        help="Generate or refresh manifest.json and both Parquet datasets.",
+        help="Generate or refresh manifest.json and the Parquet datasets.",
     )
     build.add_argument(
         "--data-dir",
@@ -246,6 +247,8 @@ def _run_build(args: argparse.Namespace) -> int:
             updated.append(SCHOOLS_FILENAME)
         if result.postcodes_updated:
             updated.append(POSTCODES_FILENAME)
+        if result.benchmarks_updated:
+            updated.append(BENCHMARKS_FILENAME)
         print("Updated: " + ", ".join(updated))
         print(f"Published: {args.data_dir / MANIFEST_FILENAME}")
     else:
@@ -295,7 +298,10 @@ def _run_lookup(args: argparse.Namespace) -> int:
         )
 
     if args.structured_json:
-        payload = [school.to_dict() for school in result.schools]
+        payload = {
+            "schools": [school.to_dict() for school in result.schools],
+            "benchmarks": [benchmark.to_dict() for benchmark in result.benchmarks],
+        }
         print(json.dumps(payload, indent=2, ensure_ascii=False))
     elif args.json:
         print(json.dumps(list(result.flat_records), indent=2, ensure_ascii=False))
@@ -327,10 +333,31 @@ def _run_lookup(args: argparse.Namespace) -> int:
         ]
         if "preference_score" in records.columns:
             columns[1:1] = ["preference_score", "preference_score_coverage_pct"]
+        if "local_authority_name" in records.columns:
+            columns.insert(columns.index("postcode"), "local_authority_name")
         display = records[columns].copy()
         display.index = range(1, len(display) + 1)
         display.index.name = "#"
         print(display.to_string())
+
+        if result.benchmarks:
+            benchmark_rows = []
+            for benchmark in result.benchmarks:
+                academic = benchmark.academics
+                benchmark_rows.append(
+                    {
+                        "level": benchmark.level,
+                        "area": benchmark.label,
+                        "data_year": academic.data_year,
+                        "attainment8": academic.attainment8,
+                        "progress8": academic.progress8,
+                        "progress8_year": academic.progress8_year,
+                        "grade5_english_maths_pct": academic.english_maths_grade5_pct,
+                        "ebacc_aps": academic.ebacc_aps,
+                    }
+                )
+            print("\nBenchmark context (all state-funded schools):\n")
+            print(pd.DataFrame(benchmark_rows).to_string(index=False))
     return 0
 
 

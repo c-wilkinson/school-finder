@@ -2,6 +2,26 @@
   "coverage": "England",
   "dataset_version": "gias-2026-09-10__onspd-2026-08",
   "files": {
+    "benchmarks.parquet": {
+      "bytes": 13634,
+      "columns": [
+        "benchmark_level",
+        "benchmark_code",
+        "benchmark_name",
+        "performance_year",
+        "attainment8",
+        "english_maths_grade5_pct",
+        "english_maths_grade4_pct",
+        "ebacc_entry_pct",
+        "ebacc_aps",
+        "progress8",
+        "progress8_year",
+        "source",
+        "source_dataset_id"
+      ],
+      "rows": 153,
+      "sha256": "e5f7619a59c079b9579f3672211d8cc0a43df394fe8e987a3c60ca397fbee4fc"
+    },
     "postcodes.parquet": {
       "bytes": 63252765,
       "columns": [
@@ -21,7 +41,7 @@
       "sha256": "a2fdc3559da5b49464b6f84c02158d241dd9592561931e62adc81cd012539aee"
     },
     "schools.parquet": {
-      "bytes": 2502829,
+      "bytes": 2519964,
       "columns": [
         "urn",
         "school_name",
@@ -64,6 +84,8 @@
         "ofsted_source_kind",
         "ofsted_source_link_depth",
         "performance_year",
+        "local_authority_code",
+        "local_authority_name",
         "attainment8",
         "english_maths_grade5_pct",
         "english_maths_grade4_pct",
@@ -77,11 +99,11 @@
         "progress8_source_link_depth"
       ],
       "rows": 26482,
-      "sha256": "a0dacb5c1d4141e3dfa78959476953c199014c611134e701716466096f7612ff"
+      "sha256": "c5347e2c123f097d255ba22362b5a63b5147e782e8c0edf5d44a4a3c9b7f9761"
     }
   },
-  "generated_at": "2026-09-10T10:02:02.232801Z",
-  "schema_version": 5,
+  "generated_at": "2026-09-10T12:04:45.322838Z",
+  "schema_version": 6,
   "sources": {
     "gias": {
       "download_url": "https://ea-edubase-api-prod.azurewebsites.net/edubase/downloads/public/edubasealldata20260910.csv",
@@ -92,6 +114,11 @@
       "download_url": "https://ea-edubase-api-prod.azurewebsites.net/edubase/downloads/public/links_edubasealldata20260910.csv",
       "name": "Get Information About Schools establishment links",
       "source_date": "2026-09-10"
+    },
+    "ks4_benchmarks": {
+      "download_url": "https://api.education.gov.uk/statistics/v1/data-sets/19e39901-560d-f972-b6f3-dd085539c095/csv",
+      "name": "DfE Key stage 4 performance benchmarks",
+      "release_label": "EES dataset 19e39901-560d-f972-b6f3-dd085539c095 (latest)"
     },
     "ks4_performance": {
       "download_url": "https://api.education.gov.uk/statistics/v1/data-sets/19e39901-a96c-be76-b9c2-6af54ae076d2/csv",

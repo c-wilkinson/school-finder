@@ -31,6 +31,8 @@ class SchoolLocation:
     address: str | None = None
     town: str | None = None
     postcode: str | None = None
+    local_authority_code: str | None = None
+    local_authority_name: str | None = None
     easting: int | None = None
     northing: int | None = None
     latitude: float | None = None
@@ -201,6 +203,10 @@ class SchoolBenchmarks:
     """Non-school comparison values, such as national or local averages."""
 
     label: str
+    level: str | None = None
+    code: str | None = None
+    source: str | None = None
+    source_dataset_id: str | None = None
     academics: AcademicPerformance = field(default_factory=AcademicPerformance)
     attendance: AttendanceStatistics = field(default_factory=AttendanceStatistics)
     behaviour: BehaviourStatistics = field(default_factory=BehaviourStatistics)
@@ -257,6 +263,8 @@ def school_result_from_flat_record(record: Mapping[str, Any]) -> SchoolResult:
             address=_as_str(record.get("address")),
             town=_as_str(record.get("town")),
             postcode=_as_str(record.get("postcode")),
+            local_authority_code=_as_str(record.get("local_authority_code")),
+            local_authority_name=_as_str(record.get("local_authority_name")),
             easting=_as_int(record.get("easting")),
             northing=_as_int(record.get("northing")),
             latitude=_as_float(record.get("latitude")),
@@ -345,6 +353,32 @@ def school_result_from_flat_record(record: Mapping[str, Any]) -> SchoolResult:
         user_assessment=assessment,
     )
 
+
+
+def school_benchmark_from_flat_record(record: Mapping[str, Any]) -> SchoolBenchmarks:
+    """Translate a canonical benchmark row into the application contract."""
+
+    return SchoolBenchmarks(
+        label=_as_str(record.get("benchmark_name")) or "",
+        level=_as_str(record.get("benchmark_level")),
+        code=_as_str(record.get("benchmark_code")),
+        source=_as_str(record.get("source")),
+        source_dataset_id=_as_str(record.get("source_dataset_id")),
+        academics=AcademicPerformance(
+            data_year=_as_str(record.get("performance_year")),
+            progress8=_as_float(record.get("progress8")),
+            progress8_year=_as_str(record.get("progress8_year")),
+            english_maths_grade5_pct=_as_float(
+                record.get("english_maths_grade5_pct")
+            ),
+            english_maths_grade4_pct=_as_float(
+                record.get("english_maths_grade4_pct")
+            ),
+            attainment8=_as_float(record.get("attainment8")),
+            ebacc_entry_pct=_as_float(record.get("ebacc_entry_pct")),
+            ebacc_aps=_as_float(record.get("ebacc_aps")),
+        ),
+    )
 
 def _preference_raw_value(
     record: Mapping[str, Any],
