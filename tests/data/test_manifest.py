@@ -2,11 +2,11 @@ import json
 from datetime import date, datetime, timezone
 
 from school_finder.data.manifest import (
-    csv_source_manifest, gias_manifest, onspd_manifest, read_manifest,
+    csv_source_manifest, gias_links_manifest, gias_manifest, onspd_manifest, read_manifest,
     source_matches, write_json_atomic,
 )
 from school_finder.data.sources.common import CsvSource
-from school_finder.data.sources.gias import GiasSource
+from school_finder.data.sources.gias import GiasLinksSource, GiasSource
 from school_finder.data.sources.onspd import OnspdSource
 
 
@@ -31,6 +31,9 @@ def test_write_json_atomic_writes_sorted_pretty_json_and_removes_temp(tmp_path):
 def test_source_manifest_helpers():
     g = gias_manifest(GiasSource(date(2026, 9, 7), "gias-url"))
     assert g["source_date"] == "2026-09-07"
+    gl = gias_links_manifest(GiasLinksSource(date(2026, 9, 7), "links-url"))
+    assert gl["name"].endswith("establishment links")
+    assert gl["download_url"] == "links-url"
     c = csv_source_manifest(CsvSource("KS4", "ks4-url", "latest"))
     assert c == {"name":"KS4", "release_label":"latest", "download_url":"ks4-url"}
     o = onspd_manifest(OnspdSource("id", "ONS Postcode Directory (August 2026)", date(2026,8,1), datetime(2026,8,2,tzinfo=timezone.utc), "item", "download"))

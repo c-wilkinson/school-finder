@@ -21,7 +21,10 @@ def test_maps_all_current_and_future_canonical_fields_into_nested_contract():
         "english_maths_grade5_pct":"55", "english_maths_grade4_pct":75,
         "attainment8":"50.2", "attainment8_english":"11", "attainment8_maths":"10",
         "attainment8_other":"29.2", "ebacc_entry_pct":"40", "ebacc_aps":"4.5",
-        "ofsted_rating":"Good", "ofsted_inspection_date":"2025-06-11",
+        "ofsted_rating":"Good", "ofsted_equivalent_rating":"Good",
+        "ofsted_equivalent_basis":"official",
+        "ofsted_equivalent_explanation":"Official Ofsted overall effectiveness grade.",
+        "ofsted_inspection_date":"2025-06-11",
         "ofsted_publication_date":"2025-07-01", "ofsted_safeguarding":"Met",
         "ofsted_inclusion":"Strong", "ofsted_curriculum_teaching":"Good",
         "ofsted_achievement":"Good", "ofsted_attendance_behaviour":"Good",
@@ -44,6 +47,8 @@ def test_maps_all_current_and_future_canonical_fields_into_nested_contract():
     assert result.location.northing == 2
     assert result.academics.attainment8 == 50.2
     assert result.inspection.inspection_year == 2025
+    assert result.inspection.equivalent_rating == "Good"
+    assert result.inspection.equivalent_basis == "official"
     assert result.attendance.overall_absence_pct == 7.4
     assert result.behaviour.permanent_exclusion_count == 1
     assert result.workforce.pupils_per_classroom_teacher == 20.0

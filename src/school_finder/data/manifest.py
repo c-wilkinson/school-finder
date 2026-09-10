@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from school_finder.data.sources.common import CsvSource
-from school_finder.data.sources.gias import GiasSource
+from school_finder.data.sources.gias import GiasLinksSource, GiasSource
 from school_finder.data.sources.onspd import OnspdSource
 from school_finder.utils import iso_utc
 
@@ -35,6 +35,14 @@ def write_json_atomic(payload: dict[str, Any], destination: Path) -> None:
 def gias_manifest(source: GiasSource) -> dict[str, Any]:
     return {
         "name": "Get Information About Schools",
+        "source_date": source.source_date.isoformat(),
+        "download_url": source.url,
+    }
+
+
+def gias_links_manifest(source: GiasLinksSource) -> dict[str, Any]:
+    return {
+        "name": "Get Information About Schools establishment links",
         "source_date": source.source_date.isoformat(),
         "download_url": source.url,
     }

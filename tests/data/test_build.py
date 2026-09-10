@@ -7,24 +7,28 @@ import pytest
 from school_finder.config import MANIFEST_SCHEMA_VERSION
 from school_finder.data import build
 from school_finder.data.sources.common import CsvSource
-from school_finder.data.sources.gias import GiasSource
+from school_finder.data.sources.gias import GiasLinksSource, GiasSource
 from school_finder.data.sources.onspd import OnspdSource
 from school_finder.errors import SchoolFinderError
 
 
 def _sources(monkeypatch):
     gias = GiasSource(date(2026, 9, 7), "gias-url")
+    gias_links = GiasLinksSource(date(2026, 9, 7), "gias-links-url")
     onspd = OnspdSource("onspd-id", "ONS Postcode Directory (August 2026)", date(2026,8,1), datetime(2026,8,2,tzinfo=timezone.utc), "item-url", "onspd-url")
     ofsted = CsvSource("Ofsted", "ofsted-url", "ofsted-release")
+    legacy_ofsted = CsvSource("Legacy Ofsted", "legacy-url", "legacy-release")
     independent = CsvSource("Independent Ofsted", "ind-url", "ind-release")
     ks4 = CsvSource("KS4", "ks4-url", "ks4-release")
     monkeypatch.setattr(build, "create_session", lambda: object())
     monkeypatch.setattr(build, "discover_latest_gias_source", lambda session: gias)
+    monkeypatch.setattr(build, "discover_latest_gias_links_source", lambda session, today=None: gias_links)
     monkeypatch.setattr(build, "discover_latest_onspd_source", lambda session, item_id_override=None: onspd)
     monkeypatch.setattr(build, "discover_latest_ofsted_source", lambda session: ofsted)
+    monkeypatch.setattr(build, "discover_latest_legacy_ofsted_source", lambda session: legacy_ofsted)
     monkeypatch.setattr(build, "discover_latest_independent_ofsted_source", lambda session: independent)
     monkeypatch.setattr(build, "discover_ks4_source", lambda session: ks4)
-    return gias, onspd, ofsted, independent, ks4
+    return gias, gias_links, onspd, ofsted, legacy_ofsted, independent, ks4
 
 
 def _disable_pyarrow_guard(monkeypatch):
@@ -53,6 +57,65 @@ def test_enrich_school_quality_rejects_duplicate_quality_rows():
         build.enrich_school_quality(schools, duplicate, pd.DataFrame({"urn":[]}))
 
 
+def test_combine_ofsted_quality_preserves_legacy_when_current_row_has_no_inspection():
+    legacy = pd.DataFrame([
+        {
+            "urn": "116478",
+            "ofsted_rating": "Good",
+            "ofsted_inspection_date": pd.Timestamp("2023-09-13"),
+            "ofsted_publication_date": pd.Timestamp("2023-11-09"),
+        },
+        {
+            "urn": "145125",
+            "ofsted_rating": None,
+            "ofsted_inspection_date": pd.Timestamp("2025-04-01"),
+            "ofsted_publication_date": pd.Timestamp("2025-05-08"),
+        },
+    ])
+    current = pd.DataFrame([
+        {
+            "urn": "116478",
+            "ofsted_rating": None,
+            "ofsted_inspection_date": pd.NaT,
+            "ofsted_publication_date": pd.NaT,
+        },
+        {
+            "urn": "145125",
+            "ofsted_rating": None,
+            "ofsted_inspection_date": pd.NaT,
+            "ofsted_publication_date": pd.NaT,
+        },
+    ])
+
+    result = build.combine_ofsted_quality(legacy, current).set_index("urn")
+    assert result.loc["116478", "ofsted_rating"] == "Good"
+    assert result.loc["116478", "ofsted_inspection_date"] == pd.Timestamp("2023-09-13")
+    assert result.loc["145125", "ofsted_inspection_date"] == pd.Timestamp("2025-04-01")
+
+
+def test_combine_ofsted_quality_prefers_newer_current_inspection():
+    legacy = pd.DataFrame([
+        {
+            "urn": "1",
+            "ofsted_rating": "Good",
+            "ofsted_inspection_date": pd.Timestamp("2025-01-01"),
+            "ofsted_publication_date": pd.Timestamp("2025-02-01"),
+        }
+    ])
+    current = pd.DataFrame([
+        {
+            "urn": "1",
+            "ofsted_rating": None,
+            "ofsted_inspection_date": pd.Timestamp("2026-01-01"),
+            "ofsted_publication_date": pd.Timestamp("2026-02-01"),
+        }
+    ])
+
+    result = build.combine_ofsted_quality(legacy, current).iloc[0]
+    assert pd.isna(result["ofsted_rating"])
+    assert result["ofsted_inspection_date"] == pd.Timestamp("2026-01-01")
+
+
 def test_build_returns_unchanged_when_every_source_is_current(tmp_path, monkeypatch):
     _disable_pyarrow_guard(monkeypatch)
     _sources(monkeypatch)
@@ -71,6 +134,9 @@ def test_build_force_rebuilds_and_publishes_both_datasets(tmp_path, monkeypatch)
     _fake_parquet_writes(monkeypatch)
     monkeypatch.setattr(build, "read_manifest", lambda path: None)
     monkeypatch.setattr(build, "download_gias_csv", lambda *a, **k: None)
+    monkeypatch.setattr(build, "download_gias_links_csv", lambda *a, **k: None)
+    monkeypatch.setattr(build, "read_gias_links_csv", lambda path: pd.DataFrame())
+    monkeypatch.setattr(build, "clean_gias_links_data", lambda raw, establishments, source: pd.DataFrame(columns=["successor_urn", "predecessor_urn", "predecessor_name"]))
     schools = pd.DataFrame({"urn":[str(i) for i in range(10_000)], "school_name":["S"]*10_000})
     monkeypatch.setattr(build, "read_gias_csv", lambda path: pd.DataFrame())
     monkeypatch.setattr(build, "clean_gias_data", lambda raw, source: schools)
@@ -124,6 +190,9 @@ def test_build_only_refreshes_schools_when_postcodes_are_current(tmp_path, monke
     monkeypatch.setattr(build, "read_manifest", lambda path: existing)
     monkeypatch.setattr(build, "source_matches", lambda manifest, name, expected, keys: name == "onspd")
     monkeypatch.setattr(build, "download_gias_csv", lambda *a, **k: None)
+    monkeypatch.setattr(build, "download_gias_links_csv", lambda *a, **k: None)
+    monkeypatch.setattr(build, "read_gias_links_csv", lambda path: pd.DataFrame())
+    monkeypatch.setattr(build, "clean_gias_links_data", lambda raw, establishments, source: pd.DataFrame(columns=["successor_urn", "predecessor_urn", "predecessor_name"]))
     schools = pd.DataFrame({"urn":[str(i) for i in range(10_000)]})
     monkeypatch.setattr(build, "read_gias_csv", lambda path: pd.DataFrame())
     monkeypatch.setattr(build, "clean_gias_data", lambda raw, source: schools)
@@ -141,10 +210,107 @@ def test_build_rejects_implausibly_small_gias_result(tmp_path, monkeypatch):
     _sources(monkeypatch)
     monkeypatch.setattr(build, "read_manifest", lambda path: None)
     monkeypatch.setattr(build, "download_gias_csv", lambda *a, **k: None)
+    monkeypatch.setattr(build, "download_gias_links_csv", lambda *a, **k: None)
     monkeypatch.setattr(build, "read_gias_csv", lambda path: pd.DataFrame())
-    monkeypatch.setattr(build, "clean_gias_data", lambda raw, source: pd.DataFrame({"urn":["1"]}))
+    monkeypatch.setattr(build, "read_gias_links_csv", lambda path: pd.DataFrame())
+    monkeypatch.setattr(build, "clean_gias_links_data", lambda raw, establishments, source: pd.DataFrame(columns=["successor_urn", "predecessor_urn", "predecessor_name"]))
+    monkeypatch.setattr(build, "clean_gias_data", lambda raw, source: pd.DataFrame({"urn":["1"], "school_name":["S"]}))
     monkeypatch.setattr(build, "download_csv", lambda *a, **k: None)
     monkeypatch.setattr(build, "read_ofsted_quality", lambda path: pd.DataFrame(columns=["urn","ofsted_publication_date","ofsted_inspection_date"]))
     monkeypatch.setattr(build, "read_ks4_quality", lambda path: pd.DataFrame(columns=["urn"]))
     with pytest.raises(SchoolFinderError, match="probably incomplete"):
         build.build_datasets(tmp_path, force=True)
+
+
+def _ofsted_row(urn, rating="Requires improvement", inspection="2023-02-07"):
+    return {
+        "urn": urn,
+        "ofsted_rating": rating,
+        "ofsted_inspection_date": pd.Timestamp(inspection),
+        "ofsted_publication_date": pd.Timestamp(inspection) + pd.Timedelta(days=30),
+        "ofsted_safeguarding": "Yes",
+        "ofsted_inclusion": pd.NA,
+        "ofsted_curriculum_teaching": rating,
+        "ofsted_achievement": pd.NA,
+        "ofsted_attendance_behaviour": rating,
+        "ofsted_personal_development": "Good",
+        "ofsted_leadership": rating,
+    }
+
+
+def test_resolve_ofsted_lineage_uses_current_school_inspection_first():
+    schools = pd.DataFrame([{"urn": "2", "school_name": "Current"}])
+    links = pd.DataFrame([{"successor_urn": "2", "predecessor_urn": "1", "predecessor_name": "Old"}])
+    ofsted = pd.DataFrame([_ofsted_row("1"), _ofsted_row("2", "Good", "2026-01-01")])
+    result = build.resolve_ofsted_lineage(schools, links, ofsted).iloc[0]
+    assert result["ofsted_rating"] == "Good"
+    assert result["ofsted_source_urn"] == "2"
+    assert result["ofsted_source_kind"] == "current"
+    assert result["ofsted_source_link_depth"] == 0
+
+
+def test_resolve_ofsted_lineage_inherits_single_predecessor_inspection():
+    schools = pd.DataFrame([{"urn": "150839", "school_name": "The Blue Coat School Basingstoke"}])
+    links = pd.DataFrame([{"successor_urn": "150839", "predecessor_urn": "116427", "predecessor_name": "Aldworth School"}])
+    ofsted = pd.DataFrame([_ofsted_row("116427")])
+    result = build.resolve_ofsted_lineage(schools, links, ofsted).iloc[0]
+    assert result["urn"] == "150839"
+    assert result["ofsted_rating"] == "Requires improvement"
+    assert result["ofsted_source_urn"] == "116427"
+    assert result["ofsted_source_school_name"] == "Aldworth School"
+    assert result["ofsted_source_kind"] == "predecessor"
+    assert result["ofsted_source_link_depth"] == 1
+
+
+def test_resolve_ofsted_lineage_can_walk_linear_predecessor_chain():
+    schools = pd.DataFrame([{"urn": "3", "school_name": "Current"}])
+    links = pd.DataFrame([
+        {"successor_urn": "3", "predecessor_urn": "2", "predecessor_name": "Middle"},
+        {"successor_urn": "2", "predecessor_urn": "1", "predecessor_name": "Original"},
+    ])
+    result = build.resolve_ofsted_lineage(schools, links, pd.DataFrame([_ofsted_row("1")])).iloc[0]
+    assert result["ofsted_source_urn"] == "1"
+    assert result["ofsted_source_school_name"] == "Original"
+    assert result["ofsted_source_link_depth"] == 2
+
+
+def test_resolve_ofsted_lineage_does_not_guess_across_multiple_predecessors():
+    schools = pd.DataFrame([{"urn": "3", "school_name": "Merged"}])
+    links = pd.DataFrame([
+        {"successor_urn": "3", "predecessor_urn": "1", "predecessor_name": "One"},
+        {"successor_urn": "3", "predecessor_urn": "2", "predecessor_name": "Two"},
+    ])
+    result = build.resolve_ofsted_lineage(
+        schools, links, pd.DataFrame([_ofsted_row("1"), _ofsted_row("2", "Good")])
+    )
+    assert result.empty
+
+
+def test_resolve_ofsted_lineage_stops_on_cycle():
+    schools = pd.DataFrame([{"urn": "3", "school_name": "Current"}])
+    links = pd.DataFrame([
+        {"successor_urn": "3", "predecessor_urn": "2", "predecessor_name": "Two"},
+        {"successor_urn": "2", "predecessor_urn": "3", "predecessor_name": "Current"},
+    ])
+    result = build.resolve_ofsted_lineage(schools, links, pd.DataFrame([_ofsted_row("9")]))
+    assert result.empty
+
+
+def test_resolve_ofsted_lineage_handles_empty_links_and_duplicate_or_invalid_edges():
+    schools = pd.DataFrame([{"urn": "3", "school_name": "Current"}])
+    own = build.resolve_ofsted_lineage(
+        schools,
+        pd.DataFrame(columns=["successor_urn", "predecessor_urn", "predecessor_name"]),
+        pd.DataFrame([_ofsted_row("3", "Good")]),
+    )
+    assert own.iloc[0]["ofsted_source_kind"] == "current"
+
+    links = pd.DataFrame([
+        {"successor_urn": "", "predecessor_urn": "2", "predecessor_name": ""},
+        {"successor_urn": "3", "predecessor_urn": "2", "predecessor_name": ""},
+        {"successor_urn": "3", "predecessor_urn": "2", "predecessor_name": ""},
+    ])
+    inherited = build.resolve_ofsted_lineage(
+        schools, links, pd.DataFrame([_ofsted_row("2")])
+    )
+    assert inherited.iloc[0]["ofsted_source_urn"] == "2"

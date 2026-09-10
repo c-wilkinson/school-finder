@@ -17,6 +17,8 @@ class SchoolIdentity:
     age_range: str | None = None
     gender: str | None = None
     religious_character: str | None = None
+    religious_ethos: str | None = None
+    faith_status: str | None = None
     website: str | None = None
     telephone: str | None = None
 
@@ -50,6 +52,13 @@ class AcademicPerformance:
 @dataclass(frozen=True, slots=True)
 class InspectionSummary:
     rating: str | None = None
+    equivalent_rating: str | None = None
+    equivalent_basis: str | None = None
+    equivalent_explanation: str | None = None
+    source_urn: str | None = None
+    source_school_name: str | None = None
+    source_kind: str | None = None
+    source_link_depth: int | None = None
     inspection_date: date | None = None
     publication_date: date | None = None
     safeguarding: str | None = None
@@ -230,6 +239,8 @@ def school_result_from_flat_record(record: Mapping[str, Any]) -> SchoolResult:
             age_range=_as_str(record.get("age_range")),
             gender=_as_str(record.get("gender")),
             religious_character=_as_str(record.get("religious_character")),
+            religious_ethos=_as_str(record.get("religious_ethos")),
+            faith_status=_as_str(record.get("faith_status")),
             website=_as_str(record.get("website")),
             telephone=_as_str(record.get("telephone")),
         ),
@@ -257,6 +268,13 @@ def school_result_from_flat_record(record: Mapping[str, Any]) -> SchoolResult:
         ),
         inspection=InspectionSummary(
             rating=_as_str(record.get("ofsted_rating")),
+            equivalent_rating=_as_str(record.get("ofsted_equivalent_rating")),
+            equivalent_basis=_as_str(record.get("ofsted_equivalent_basis")),
+            equivalent_explanation=_as_str(record.get("ofsted_equivalent_explanation")),
+            source_urn=_as_str(record.get("ofsted_source_urn")),
+            source_school_name=_as_str(record.get("ofsted_source_school_name")),
+            source_kind=_as_str(record.get("ofsted_source_kind")),
+            source_link_depth=_as_int(record.get("ofsted_source_link_depth")),
             inspection_date=inspection_date,
             publication_date=_as_date(record.get("ofsted_publication_date")),
             safeguarding=_as_str(record.get("ofsted_safeguarding")),
