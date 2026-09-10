@@ -28,6 +28,7 @@ from school_finder.models.filters import (
     SelectionFilter,
     SortDirection,
 )
+from school_finder.models.preferences import PreferencePreset, SchoolPreferences
 from school_finder.models.search import SchoolSearchRequest
 from school_finder.services.search import search_schools
 from school_finder.utils import log
@@ -49,6 +50,46 @@ def _enum_parser(enum_type):
         )
 
     return parse
+
+
+def _preferences_from_args(args: argparse.Namespace) -> SchoolPreferences | None:
+    weight_names = {
+        "distance": "weight_distance",
+        "ofsted": "weight_ofsted",
+        "attainment8": "weight_attainment8",
+        "progress8": "weight_progress8",
+        "grade5_english_maths": "weight_grade5_english_maths",
+        "ebacc_aps": "weight_ebacc_aps",
+    }
+    overrides = {
+        field: getattr(args, argument, None)
+        for field, argument in weight_names.items()
+    }
+    preset = getattr(args, "preference_preset", None)
+
+    if preset is None and all(value is None for value in overrides.values()):
+        return None
+
+    if preset is None or preset is PreferencePreset.CUSTOM:
+        values = {
+            field: (value if value is not None else 0.0)
+            for field, value in overrides.items()
+        }
+    else:
+        base = SchoolPreferences.from_preset(preset)
+        values = {
+            "distance": base.distance,
+            "ofsted": base.ofsted,
+            "attainment8": base.attainment8,
+            "progress8": base.progress8,
+            "grade5_english_maths": base.grade5_english_maths,
+            "ebacc_aps": base.ebacc_aps,
+        }
+        for field, value in overrides.items():
+            if value is not None:
+                values[field] = value
+
+    return SchoolPreferences(**values)
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -150,6 +191,24 @@ def create_parser() -> argparse.ArgumentParser:
     )
     lookup.add_argument("--minimum-ebacc-aps", type=float)
     lookup.add_argument(
+        "--preference-preset",
+        type=_enum_parser(PreferencePreset),
+        help=(
+            "Rank matching schools using a built-in preference preset. "
+            "Custom weights can override individual preset weights."
+        ),
+    )
+    lookup.add_argument("--weight-distance", type=float)
+    lookup.add_argument("--weight-ofsted", type=float)
+    lookup.add_argument("--weight-attainment8", type=float)
+    lookup.add_argument("--weight-progress8", type=float)
+    lookup.add_argument(
+        "--weight-grade5-english-maths",
+        dest="weight_grade5_english_maths",
+        type=float,
+    )
+    lookup.add_argument("--weight-ebacc-aps", type=float)
+    lookup.add_argument(
         "--sort",
         type=_enum_parser(SchoolSortField),
         default=SchoolSortField.DISTANCE,
@@ -220,6 +279,7 @@ def _run_lookup(args: argparse.Namespace) -> int:
                     SortDirection.DESC if args.descending else SortDirection.ASC
                 ),
             ),
+            preferences=_preferences_from_args(args),
         ),
     )
 
@@ -247,25 +307,27 @@ def _run_lookup(args: argparse.Namespace) -> int:
             f"Found {len(result.schools)} schools matching search around "
             f"{result.postcode.postcode}:\n"
         )
-        display = pd.DataFrame(result.flat_records)[
-            [
-                "school_name",
-                "distance_miles",
-                "sector",
-                "establishment_type",
-                "age_range",
-                "faith_status",
-                "ofsted_equivalent_rating",
-                "ofsted_inspection_date",
-                "ofsted_source_school_name",
-                "attainment8",
-                "progress8",
-                "progress8_year",
-                "town",
-                "postcode",
-                "urn",
-            ]
-        ].copy()
+        records = pd.DataFrame(result.flat_records)
+        columns = [
+            "school_name",
+            "distance_miles",
+            "sector",
+            "establishment_type",
+            "age_range",
+            "faith_status",
+            "ofsted_equivalent_rating",
+            "ofsted_inspection_date",
+            "ofsted_source_school_name",
+            "attainment8",
+            "progress8",
+            "progress8_year",
+            "town",
+            "postcode",
+            "urn",
+        ]
+        if "preference_score" in records.columns:
+            columns[1:1] = ["preference_score", "preference_score_coverage_pct"]
+        display = records[columns].copy()
         display.index = range(1, len(display) + 1)
         display.index.name = "#"
         print(display.to_string())

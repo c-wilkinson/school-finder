@@ -6,6 +6,9 @@ from dataclasses import dataclass, field, fields, is_dataclass
 from datetime import date, datetime, time
 from typing import Any, Mapping
 
+from school_finder.models.preferences import PreferenceMetric
+from school_finder.models.scoring import ScoreComponent, SchoolScore
+
 
 @dataclass(frozen=True, slots=True)
 class SchoolIdentity:
@@ -39,6 +42,10 @@ class AcademicPerformance:
     data_year: str | None = None
     progress8: float | None = None
     progress8_year: str | None = None
+    progress8_source_urn: str | None = None
+    progress8_source_school_name: str | None = None
+    progress8_source_kind: str | None = None
+    progress8_source_link_depth: int | None = None
     english_maths_grade5_pct: float | None = None
     english_maths_grade4_pct: float | None = None
     attainment8: float | None = None
@@ -182,6 +189,7 @@ class SchoolResult:
     workforce: WorkforceStatistics = field(default_factory=WorkforceStatistics)
     admissions: AdmissionsInformation = field(default_factory=AdmissionsInformation)
     travel: TravelInformation = field(default_factory=TravelInformation)
+    preference_score: SchoolScore | None = None
     user_assessment: UserAssessment | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -228,6 +236,7 @@ def school_result_from_flat_record(record: Mapping[str, Any]) -> SchoolResult:
     notes = _as_str(record.get("user_notes"))
     score = _as_float(record.get("user_score"))
     assessment = UserAssessment(notes=notes, score=score) if notes is not None or score is not None else None
+    preference_score = _preference_score_from_record(record)
 
     return SchoolResult(
         identity=SchoolIdentity(
@@ -257,6 +266,14 @@ def school_result_from_flat_record(record: Mapping[str, Any]) -> SchoolResult:
             data_year=_as_str(record.get("performance_year")),
             progress8=_as_float(record.get("progress8")),
             progress8_year=_as_str(record.get("progress8_year")),
+            progress8_source_urn=_as_str(record.get("progress8_source_urn")),
+            progress8_source_school_name=_as_str(
+                record.get("progress8_source_school_name")
+            ),
+            progress8_source_kind=_as_str(record.get("progress8_source_kind")),
+            progress8_source_link_depth=_as_int(
+                record.get("progress8_source_link_depth")
+            ),
             english_maths_grade5_pct=_as_float(record.get("english_maths_grade5_pct")),
             english_maths_grade4_pct=_as_float(record.get("english_maths_grade4_pct")),
             attainment8=_as_float(record.get("attainment8")),
@@ -324,7 +341,55 @@ def school_result_from_flat_record(record: Mapping[str, Any]) -> SchoolResult:
             home_arrival_time=_as_time(record.get("home_arrival_time")),
             total_day_minutes=_as_int(record.get("total_day_minutes")),
         ),
+        preference_score=preference_score,
         user_assessment=assessment,
+    )
+
+
+def _preference_raw_value(
+    record: Mapping[str, Any],
+    metric: PreferenceMetric,
+) -> float | str | None:
+    if metric is PreferenceMetric.DISTANCE:
+        return _as_float(record.get("distance_miles"))
+    if metric is PreferenceMetric.OFSTED:
+        return _as_str(record.get("ofsted_equivalent_rating"))
+    column = {
+        PreferenceMetric.ATTAINMENT8: "attainment8",
+        PreferenceMetric.PROGRESS8: "progress8",
+        PreferenceMetric.GRADE5_ENGLISH_MATHS: "english_maths_grade5_pct",
+        PreferenceMetric.EBACC_APS: "ebacc_aps",
+    }[metric]
+    return _as_float(record.get(column))
+
+
+def _preference_score_from_record(record: Mapping[str, Any]) -> SchoolScore | None:
+    if "preference_score_coverage_pct" not in record:
+        return None
+
+    components = []
+    for metric in PreferenceMetric:
+        key = metric.value.replace("-", "_")
+        components.append(
+            ScoreComponent(
+                metric=metric,
+                raw_value=_preference_raw_value(record, metric),
+                score=_as_float(record.get(f"preference_{key}_score")),
+                requested_weight_pct=_as_float(
+                    record.get(f"preference_{key}_requested_weight_pct")
+                )
+                or 0.0,
+                effective_weight_pct=_as_float(
+                    record.get(f"preference_{key}_effective_weight_pct")
+                )
+                or 0.0,
+            )
+        )
+
+    return SchoolScore(
+        overall=_as_float(record.get("preference_score")),
+        coverage_pct=_as_float(record.get("preference_score_coverage_pct")) or 0.0,
+        components=tuple(components),
     )
 
 

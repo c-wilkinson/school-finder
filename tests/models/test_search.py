@@ -11,6 +11,7 @@ from school_finder.models.filters import (
     SelectionFilter,
     SortDirection,
 )
+from school_finder.models.preferences import SchoolPreferences
 from school_finder.models.search import PostcodeLocation, SchoolSearchRequest, SchoolSearchResult
 from school_finder.models.school import SchoolIdentity, SchoolResult
 
@@ -29,6 +30,7 @@ def test_search_contract_defaults_and_result_storage():
     assert request.selection is SelectionFilter.ANY
     assert request.minimum_ofsted_rating is None
     assert request.sort == SchoolSort()
+    assert request.preferences is None
 
     postcode = PostcodeLocation("SW1A 2AA", 1, 2, True)
     school = SchoolResult(SchoolIdentity("1", "Example"))
@@ -52,10 +54,12 @@ def test_search_contract_accepts_full_filter_set():
         minimum_grade5_english_maths_pct=50,
         minimum_ebacc_aps=4.1,
         sort=SchoolSort(SchoolSortField.ATTAINMENT8, SortDirection.DESC),
+        preferences=SchoolPreferences(distance=2, ofsted=1),
     )
     assert request.radius_miles == 5
     assert request.minimum_progress8 == -0.2
     assert request.sort.direction is SortDirection.DESC
+    assert request.preferences.distance == 2
 
 
 @pytest.mark.parametrize(

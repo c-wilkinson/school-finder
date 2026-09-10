@@ -21,7 +21,7 @@
       "sha256": "a2fdc3559da5b49464b6f84c02158d241dd9592561931e62adc81cd012539aee"
     },
     "schools.parquet": {
-      "bytes": 2433732,
+      "bytes": 2502829,
       "columns": [
         "urn",
         "school_name",
@@ -70,14 +70,18 @@
         "ebacc_entry_pct",
         "ebacc_aps",
         "progress8",
-        "progress8_year"
+        "progress8_year",
+        "progress8_source_urn",
+        "progress8_source_school_name",
+        "progress8_source_kind",
+        "progress8_source_link_depth"
       ],
       "rows": 26482,
-      "sha256": "3d73c2b2830404e52dff580dd936ae1acdbefe29ef212ccdcf590b369ed29586"
+      "sha256": "a0dacb5c1d4141e3dfa78959476953c199014c611134e701716466096f7612ff"
     }
   },
-  "generated_at": "2026-09-10T08:47:47.376066Z",
-  "schema_version": 4,
+  "generated_at": "2026-09-10T10:02:02.232801Z",
+  "schema_version": 5,
   "sources": {
     "gias": {
       "download_url": "https://ea-edubase-api-prod.azurewebsites.net/edubase/downloads/public/edubasealldata20260910.csv",

@@ -485,3 +485,59 @@ def test_ofsted_provenance_explanation_handles_missing_predecessor_name():
     })
     explanation = service._with_ofsted_provenance(row, "Derived rating.")
     assert "predecessor URN 123" in explanation
+
+
+def test_preferences_score_and_rank_filtered_candidates_before_limit(monkeypatch):
+    from school_finder.models.preferences import SchoolPreferences
+
+    rows = [
+        _school_row(
+            urn="1",
+            school_name="Closest",
+            easting=462000,
+            northing=149000,
+            attainment8=40,
+        ),
+        _school_row(
+            urn="2",
+            school_name="Academic",
+            easting=465218.688,
+            northing=149000,
+            attainment8=70,
+        ),
+        _school_row(
+            urn="3",
+            school_name="Middle",
+            easting=463609.344,
+            northing=149000,
+            attainment8=50,
+        ),
+    ]
+    request = SchoolSearchRequest(
+        "X",
+        limit=2,
+        preferences=SchoolPreferences(attainment8=1),
+    )
+    result = _run_find(monkeypatch, rows, request)
+
+    assert result["school_name"].tolist() == ["Academic", "Middle"]
+    assert "preference_score" in result.columns
+    assert result.iloc[0]["preference_score"] == 100
+
+
+def test_preferences_with_no_available_weighted_data_rank_missing_scores_last(monkeypatch):
+    from school_finder.models.preferences import SchoolPreferences
+
+    rows = [
+        _school_row(urn="1", school_name="Rated", ofsted_rating="Good"),
+        _school_row(
+            urn="2",
+            school_name="Unrated",
+            ofsted_rating=None,
+            ofsted_safeguarding=None,
+        ),
+    ]
+    request = SchoolSearchRequest("X", preferences=SchoolPreferences(ofsted=1))
+    result = _run_find(monkeypatch, rows, request)
+    assert result["school_name"].tolist() == ["Rated", "Unrated"]
+    assert pd.isna(result.iloc[1]["preference_score"])

@@ -92,5 +92,5 @@ def read_ks4_quality(path: Path) -> pd.DataFrame:
         })
 
     result = result[result["urn"].ne("")].drop_duplicates("urn", keep="last")
-    result = result.merge(progress, on="urn", how="left")
+    result = result.merge(progress, on="urn", how="outer")
     return result.reset_index(drop=True)

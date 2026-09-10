@@ -144,3 +144,50 @@ def test_missing_detection_tolerates_objects_with_broken_inequality():
         def __str__(self): return "value"
         def __ne__(self, other): raise TypeError("no comparison")
     assert model._is_missing(Broken()) is False
+
+
+def test_maps_preference_scoring_into_explainable_school_score():
+    record = {
+        "urn": "1",
+        "school_name": "Scored School",
+        "distance_miles": 1.5,
+        "ofsted_equivalent_rating": "Good",
+        "attainment8": 52.0,
+        "progress8": 0.2,
+        "english_maths_grade5_pct": 61.0,
+        "ebacc_aps": 4.4,
+        "preference_score": 81.25,
+        "preference_score_coverage_pct": 80.0,
+    }
+    for metric in model.PreferenceMetric:
+        key = metric.value.replace("-", "_")
+        record[f"preference_{key}_score"] = 75.0
+        record[f"preference_{key}_requested_weight_pct"] = 20.0
+        record[f"preference_{key}_effective_weight_pct"] = 25.0
+
+    result = school_result_from_flat_record(record)
+    score = result.preference_score
+    assert score.overall == 81.25
+    assert score.coverage_pct == 80.0
+    assert len(score.components) == 6
+    assert score.component(model.PreferenceMetric.DISTANCE).raw_value == 1.5
+    assert score.component(model.PreferenceMetric.OFSTED).raw_value == "Good"
+    assert score.component(model.PreferenceMetric.ATTAINMENT8).raw_value == 52.0
+    assert score.component(model.PreferenceMetric.PROGRESS8).raw_value == 0.2
+    assert score.component(model.PreferenceMetric.GRADE5_ENGLISH_MATHS).raw_value == 61.0
+    assert score.component(model.PreferenceMetric.EBACC_APS).raw_value == 4.4
+    assert result.to_dict()["preference_score"]["overall"] == 81.25
+
+
+def test_scoring_record_with_zero_coverage_is_preserved_as_applied_but_unscored():
+    result = school_result_from_flat_record({
+        "urn": "1",
+        "school_name": "No data",
+        "preference_score": None,
+        "preference_score_coverage_pct": 0.0,
+    })
+    assert result.preference_score is not None
+    assert result.preference_score.overall is None
+    assert result.preference_score.coverage_pct == 0.0
+    assert all(component.requested_weight_pct == 0.0 for component in result.preference_score.components)
+    assert all(component.effective_weight_pct == 0.0 for component in result.preference_score.components)

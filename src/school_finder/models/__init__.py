@@ -16,7 +16,13 @@ from school_finder.models.ofsted import (
     OfstedEquivalentBasis,
     derive_equivalent_ofsted_rating,
 )
+from school_finder.models.preferences import (
+    PreferenceMetric,
+    PreferencePreset,
+    SchoolPreferences,
+)
 from school_finder.models.school import SchoolResult
+from school_finder.models.scoring import ScoreComponent, SchoolScore
 from school_finder.models.search import SchoolSearchRequest, SchoolSearchResult
 
 __all__ = [
@@ -24,14 +30,19 @@ __all__ = [
     "OfstedEquivalent",
     "OfstedEquivalentBasis",
     "OfstedRating",
+    "PreferenceMetric",
+    "PreferencePreset",
     "SchoolGender",
     "SchoolPhase",
+    "SchoolPreferences",
     "SchoolResult",
+    "SchoolScore",
     "SchoolSearchRequest",
     "SchoolSearchResult",
     "SchoolSector",
     "SchoolSort",
     "SchoolSortField",
+    "ScoreComponent",
     "SelectionFilter",
     "SortDirection",
     "derive_equivalent_ofsted_rating",

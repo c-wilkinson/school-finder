@@ -72,3 +72,31 @@ def test_read_ks4_quality_handles_missing_optional_metric_and_progress_columns(t
     assert result.iloc[0]["urn"] == "1"
     assert pd.isna(result.iloc[0]["attainment8"])
     assert pd.isna(result.iloc[0]["progress8"])
+
+
+def test_read_ks4_quality_keeps_historic_progress_only_urns(tmp_path: Path):
+    path = tmp_path / "ks4.csv"
+    pd.DataFrame([
+        {
+            "school_urn": "OLD",
+            "time_period": "202324",
+            "breakdown": "Total",
+            "attainment8_average": "35.6",
+            "progress8_average": "-0.76",
+        },
+        {
+            "school_urn": "CURRENT",
+            "time_period": "202425",
+            "breakdown": "Total",
+            "attainment8_average": "33.1",
+            "progress8_average": "z",
+        },
+    ]).to_csv(path, index=False)
+
+    result = ks4.read_ks4_quality(path).set_index("urn")
+
+    assert result.loc["CURRENT", "attainment8"] == 33.1
+    assert pd.isna(result.loc["CURRENT", "progress8"])
+    assert result.loc["OLD", "progress8"] == -0.76
+    assert result.loc["OLD", "progress8_year"] == "202324"
+    assert pd.isna(result.loc["OLD", "performance_year"])

@@ -314,3 +314,154 @@ def test_resolve_ofsted_lineage_handles_empty_links_and_duplicate_or_invalid_edg
         schools, links, pd.DataFrame([_ofsted_row("2")])
     )
     assert inherited.iloc[0]["ofsted_source_urn"] == "2"
+
+
+def _performance_row(
+    urn,
+    *,
+    attainment8=50.0,
+    progress8=0.2,
+    progress8_year="202324",
+    performance_year="202425",
+):
+    return {
+        "urn": urn,
+        "performance_year": performance_year,
+        "attainment8": attainment8,
+        "english_maths_grade5_pct": 50.0,
+        "english_maths_grade4_pct": 70.0,
+        "ebacc_entry_pct": 30.0,
+        "ebacc_aps": 4.0,
+        "progress8": progress8,
+        "progress8_year": progress8_year,
+    }
+
+
+def test_resolve_progress8_lineage_keeps_current_school_value():
+    schools = pd.DataFrame([{"urn": "2", "school_name": "Current"}])
+    links = pd.DataFrame([
+        {"successor_urn": "2", "predecessor_urn": "1", "predecessor_name": "Old"}
+    ])
+    performance = pd.DataFrame([
+        _performance_row("1", progress8=-0.5),
+        _performance_row("2", progress8=0.3),
+    ])
+
+    result = build.resolve_progress8_lineage(schools, links, performance).iloc[0]
+
+    assert result["progress8"] == 0.3
+    assert result["progress8_source_urn"] == "2"
+    assert result["progress8_source_school_name"] == "Current"
+    assert result["progress8_source_kind"] == "current"
+    assert result["progress8_source_link_depth"] == 0
+
+
+def test_resolve_progress8_lineage_inherits_only_missing_progress8():
+    schools = pd.DataFrame([
+        {"urn": "150839", "school_name": "The Blue Coat School Basingstoke"}
+    ])
+    links = pd.DataFrame([
+        {
+            "successor_urn": "150839",
+            "predecessor_urn": "116427",
+            "predecessor_name": "Aldworth School",
+        }
+    ])
+    performance = pd.DataFrame([
+        _performance_row(
+            "150839",
+            attainment8=33.1,
+            progress8=pd.NA,
+            progress8_year=pd.NA,
+        ),
+        _performance_row(
+            "116427",
+            attainment8=35.6,
+            progress8=-0.76,
+            progress8_year="202324",
+            performance_year=pd.NA,
+        ),
+    ])
+
+    result = build.resolve_progress8_lineage(schools, links, performance).iloc[0]
+
+    assert result["attainment8"] == 33.1
+    assert result["progress8"] == -0.76
+    assert result["progress8_year"] == "202324"
+    assert result["progress8_source_urn"] == "116427"
+    assert result["progress8_source_school_name"] == "Aldworth School"
+    assert result["progress8_source_kind"] == "predecessor"
+    assert result["progress8_source_link_depth"] == 1
+
+
+def test_resolve_progress8_lineage_walks_linear_chain():
+    schools = pd.DataFrame([{"urn": "3", "school_name": "Current"}])
+    links = pd.DataFrame([
+        {"successor_urn": "3", "predecessor_urn": "2", "predecessor_name": "Middle"},
+        {"successor_urn": "2", "predecessor_urn": "1", "predecessor_name": "Original"},
+    ])
+    performance = pd.DataFrame([_performance_row("1", progress8=-0.4)])
+
+    result = build.resolve_progress8_lineage(schools, links, performance).iloc[0]
+
+    assert result["progress8"] == -0.4
+    assert result["progress8_source_urn"] == "1"
+    assert result["progress8_source_school_name"] == "Original"
+    assert result["progress8_source_link_depth"] == 2
+
+
+def test_resolve_progress8_lineage_does_not_guess_across_multiple_predecessors():
+    schools = pd.DataFrame([{"urn": "3", "school_name": "Merged"}])
+    links = pd.DataFrame([
+        {"successor_urn": "3", "predecessor_urn": "1", "predecessor_name": "One"},
+        {"successor_urn": "3", "predecessor_urn": "2", "predecessor_name": "Two"},
+    ])
+    performance = pd.DataFrame([
+        _performance_row("1", progress8=-0.4),
+        _performance_row("2", progress8=0.4),
+    ])
+
+    result = build.resolve_progress8_lineage(schools, links, performance).iloc[0]
+
+    assert pd.isna(result["progress8"])
+    assert result["progress8_source_urn"] is None
+    assert result["progress8_source_kind"] is None
+
+
+def test_resolve_progress8_lineage_stops_on_cycle_and_handles_bad_edges():
+    schools = pd.DataFrame([{"urn": "3", "school_name": "Current"}])
+    links = pd.DataFrame([
+        {"successor_urn": "", "predecessor_urn": "9", "predecessor_name": "Ignored"},
+        {"successor_urn": "3", "predecessor_urn": "2", "predecessor_name": ""},
+        {"successor_urn": "3", "predecessor_urn": "2", "predecessor_name": ""},
+        {"successor_urn": "2", "predecessor_urn": "3", "predecessor_name": "Current"},
+    ])
+
+    result = build.resolve_progress8_lineage(
+        schools, links, pd.DataFrame([_performance_row("9")])
+    ).iloc[0]
+
+    assert pd.isna(result["progress8"])
+    assert result["progress8_source_school_name"] is None
+
+
+def test_enrich_school_quality_resolves_progress8_lineage_without_overwriting_current_metrics():
+    schools = pd.DataFrame([
+        {"urn": "2", "school_name": "Current"},
+    ])
+    links = pd.DataFrame([
+        {"successor_urn": "2", "predecessor_urn": "1", "predecessor_name": "Old"}
+    ])
+    performance = pd.DataFrame([
+        _performance_row("2", attainment8=52.0, progress8=pd.NA),
+        _performance_row("1", attainment8=40.0, progress8=-0.25),
+    ])
+    ofsted = pd.DataFrame(columns=["urn", *build.OFSTED_QUALITY_COLUMNS])
+
+    result = build.enrich_school_quality(
+        schools, ofsted, performance, links=links
+    ).iloc[0]
+
+    assert result["attainment8"] == 52.0
+    assert result["progress8"] == -0.25
+    assert result["progress8_source_kind"] == "predecessor"

@@ -88,6 +88,24 @@ OFSTED_QUALITY_COLUMNS = (
     "ofsted_leadership",
 )
 
+KS4_PERFORMANCE_COLUMNS = (
+    "performance_year",
+    "attainment8",
+    "english_maths_grade5_pct",
+    "english_maths_grade4_pct",
+    "ebacc_entry_pct",
+    "ebacc_aps",
+    "progress8",
+    "progress8_year",
+)
+
+PROGRESS8_SOURCE_COLUMNS = (
+    "progress8_source_urn",
+    "progress8_source_school_name",
+    "progress8_source_kind",
+    "progress8_source_link_depth",
+)
+
 
 def _has_ofsted_quality(row: pd.Series | None) -> bool:
     if row is None:
@@ -188,6 +206,100 @@ def resolve_ofsted_lineage(
     return pd.DataFrame.from_records(resolved, columns=columns)
 
 
+def resolve_progress8_lineage(
+    schools: pd.DataFrame,
+    links: pd.DataFrame,
+    performance: pd.DataFrame,
+) -> pd.DataFrame:
+
+    performance_rows = {
+        str(row["urn"]).strip(): row
+        for _, row in performance.iterrows()
+        if str(row.get("urn", "")).strip()
+    }
+
+    predecessors: dict[str, list[str]] = {}
+    predecessor_names: dict[str, str] = {}
+    if not links.empty:
+        for _, row in links.iterrows():
+            successor = str(row.get("successor_urn", "")).strip()
+            predecessor = str(row.get("predecessor_urn", "")).strip()
+            if not successor or not predecessor:
+                continue
+            predecessors.setdefault(successor, [])
+            if predecessor not in predecessors[successor]:
+                predecessors[successor].append(predecessor)
+            name = str(row.get("predecessor_name", "")).strip()
+            if name:
+                predecessor_names[predecessor] = name
+
+    current_names = {
+        str(row["urn"]).strip(): str(row.get("school_name", "")).strip()
+        for _, row in schools.iterrows()
+    }
+    names = {**predecessor_names, **current_names}
+
+    resolved: list[dict[str, Any]] = []
+    for current_urn, current_name in current_names.items():
+        current_row = performance_rows.get(current_urn)
+        record = {
+            column: (
+                current_row.get(column, pd.NA)
+                if current_row is not None
+                else pd.NA
+            )
+            for column in KS4_PERFORMANCE_COLUMNS
+        }
+        record["urn"] = current_urn
+
+        progress8 = record["progress8"]
+        source_urn: str | None = None
+        source_kind: str | None = None
+        depth: int | None = None
+
+        if pd.notna(progress8):
+            source_urn = current_urn
+            source_kind = "current"
+            depth = 0
+        else:
+            cursor = current_urn
+            visited = {current_urn}
+            link_depth = 0
+            while True:
+                candidates = predecessors.get(cursor, [])
+                if len(candidates) != 1:
+                    break
+                predecessor_urn = candidates[0]
+                if predecessor_urn in visited:
+                    break
+                visited.add(predecessor_urn)
+                link_depth += 1
+                candidate_row = performance_rows.get(predecessor_urn)
+                if candidate_row is not None and pd.notna(candidate_row.get("progress8")):
+                    record["progress8"] = candidate_row.get("progress8")
+                    record["progress8_year"] = candidate_row.get("progress8_year", pd.NA)
+                    source_urn = predecessor_urn
+                    source_kind = "predecessor"
+                    depth = link_depth
+                    break
+                cursor = predecessor_urn
+
+        record.update(
+            {
+                "progress8_source_urn": source_urn,
+                "progress8_source_school_name": (
+                    names.get(source_urn) if source_urn is not None else None
+                ) or (current_name if source_urn == current_urn else None),
+                "progress8_source_kind": source_kind,
+                "progress8_source_link_depth": depth,
+            }
+        )
+        resolved.append(record)
+
+    columns = ["urn", *KS4_PERFORMANCE_COLUMNS, *PROGRESS8_SOURCE_COLUMNS]
+    return pd.DataFrame.from_records(resolved, columns=columns)
+
+
 def enrich_school_quality(
     schools: pd.DataFrame,
     ofsted: pd.DataFrame,
@@ -199,8 +311,15 @@ def enrich_school_quality(
         if links is not None
         else ofsted
     )
+    resolved_performance = (
+        resolve_progress8_lineage(schools, links, performance)
+        if links is not None
+        else performance
+    )
     enriched = schools.merge(resolved_ofsted, on="urn", how="left", validate="one_to_one")
-    enriched = enriched.merge(performance, on="urn", how="left", validate="one_to_one")
+    enriched = enriched.merge(
+        resolved_performance, on="urn", how="left", validate="one_to_one"
+    )
     return enriched
 
 
