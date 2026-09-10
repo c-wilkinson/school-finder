@@ -2,121 +2,188 @@
 
 [![CI](https://github.com/c-wilkinson/school-finder/actions/workflows/ci.yml/badge.svg)](https://github.com/c-wilkinson/school-finder/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/c-wilkinson/school-finder/branch/main/graph/badge.svg)](https://codecov.io/gh/c-wilkinson/school-finder)
+[![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 
-School Finder builds a local, queryable dataset of English schools and exposes a
-presentation-independent search service.
+**Find, compare and rank secondary schools in England by postcode**, using official DfE, Ofsted and ONS data.
 
-The project currently combines:
+School Finder combines several public datasets into one structured local dataset, with reusable search and scoring logic that can be consumed from the CLI or directly from Python.
 
-- Get Information About Schools (GIAS)
-- ONS Postcode Directory (ONSPD)
-- Ofsted inspection outcomes
-- DfE Key Stage 4 performance data
+The longer-term aim is for the same core to power a Streamlit web app, public API and MCP server.
 
-## Architecture
+## Why this exists
 
-```text
-src/school_finder/
-├── cli.py                 # command-line presentation adapter
-├── config.py
-├── errors.py
-├── data/
-│   ├── build.py           # build orchestration
-│   ├── manifest.py
-│   ├── parquet.py
-│   └── sources/           # upstream-data adapters
-├── models/
-│   ├── school.py          # application-facing school contract
-│   └── search.py          # search request/response contracts
-└── services/
-    ├── postcode.py
-    └── search.py          # reusable search use-case
-```
+When we were looking at secondary schools for my son, I ended up building a spreadsheet combining information from several different sources.
 
-## Development setup
+I shared it with a few other parents and several said they wished they'd had something similar when choosing schools.
 
-```powershell
+The information is available publicly, but it's spread across a number of different places. School Finder is an attempt to bring the useful bits together and make it easier to answer questions such as:
+
+- Which secondary schools are within 3 miles of this postcode?
+- Which nearby schools have the strongest academic results?
+- How do Ofsted outcomes and KS4 performance compare?
+- Which schools best match the things that matter most to me?
+- Can I consume the same information from another application?
+
+## Data sources
+
+School Finder currently uses:
+
+- **GIAS** — Get Information About Schools (DfE)
+- **ONSPD** — ONS Postcode Directory
+- **Ofsted** — school inspection outcomes and judgements
+- **DfE KS4** — Attainment 8, Progress 8, English & Maths, EBacc and related measures
+
+The build process downloads and normalises the source data into local Parquet datasets.
+
+## Quick start
+
+```bash
+git clone https://github.com/c-wilkinson/school-finder.git
+cd school-finder
+
 python -m pip install -e ".[dev]"
-```
 
-## Build or refresh data
-
-```powershell
 school-finder build
-```
-
-To force a complete rebuild:
-
-```powershell
-school-finder build --force
-```
-
-## Search
-
-```powershell
 school-finder lookup "SW1A 2AA"
 ```
 
-Flat JSON (legacy CLI contract):
+### Output formats
 
-```powershell
+Human-readable output is the default:
+
+```bash
+school-finder lookup "SW1A 2AA"
+```
+
+Flat JSON:
+
+```bash
 school-finder lookup "SW1A 2AA" --json
 ```
 
-Application-facing nested models:
+Structured application models:
 
-```powershell
+```bash
 school-finder lookup "SW1A 2AA" --structured-json
 ```
 
-You can also run the package without the installed console-script name:
+## Search filters
 
-```powershell
-python -m school_finder lookup "SW1A 2AA"
+Searches can be restricted using a number of hard filters:
+
+```bash
+school-finder lookup "SW1A 2AA" \
+    --radius 5 \
+    --phase secondary \
+    --sector state-funded \
+    --gender mixed \
+    --faith non-faith \
+    --minimum-ofsted good \
+    --minimum-attainment8 45
 ```
 
-## Use from Python
+Filters determine which schools are acceptable. Preference scoring is then used to rank the schools that remain.
+
+## Preference scoring
+
+Schools can be ranked according to configurable priorities:
+
+```bash
+school-finder lookup "SW1A 2AA" \
+    --radius 5 \
+    --weight-distance 30 \
+    --weight-ofsted 25 \
+    --weight-attainment8 20 \
+    --weight-progress8 15 \
+    --weight-grade5-english-maths 10
+```
+
+Built-in presets are also available:
+
+```bash
+school-finder lookup "SW1A 2AA" --preference-preset balanced
+school-finder lookup "SW1A 2AA" --preference-preset academic
+school-finder lookup "SW1A 2AA" --preference-preset closest
+school-finder lookup "SW1A 2AA" --preference-preset ofsted-focused
+```
+
+Scores are broken down by component rather than being treated as an unexplained single number.
+
+Missing metrics are not treated as zero; available weights are redistributed and the result includes a coverage percentage showing how much of the requested scoring data was available.
+
+## Ofsted handling
+
+Older Ofsted inspections included an overall effectiveness grade, while newer inspection frameworks use individual judgements instead.
+
+Where an official overall grade exists, School Finder uses it unchanged.
+
+Where it does not, School Finder derives a clearly labelled **equivalent Ofsted rating** from the available judgements using a limiting-judgement approach. A weak key judgement therefore cannot simply be averaged away by stronger scores elsewhere.
+
+School Finder can also follow unambiguous GIAS predecessor relationships where a school has changed URN, retaining the original school and URN as provenance for inherited historical inspection data.
+
+## Use as a Python library
 
 ```python
 from pathlib import Path
 
-from school_finder import SchoolSearchRequest, search_schools
+from school_finder import (
+    PreferencePreset,
+    SchoolPreferences,
+    SchoolSearchRequest,
+    search_schools,
+)
 
 result = search_schools(
     Path("data"),
-    SchoolSearchRequest(postcode="SW1A 2AA", limit=20),
+    SchoolSearchRequest(
+        postcode="SW1A 2AA",
+        radius_miles=5,
+        preferences=SchoolPreferences.from_preset(
+            PreferencePreset.BALANCED
+        ),
+    ),
 )
 
 for school in result.schools:
-    print(school.identity.name, school.travel.distance_miles)
+    print(
+        school.identity.name,
+        school.preference_score.overall,
+        school.travel.distance_miles,
+    )
 ```
 
-## Tests
+## Architecture
 
-The test suite covers the public-data adapters, dataset build orchestration,
-manifest and Parquet helpers, application models, postcode/search services and
-the CLI. External HTTP calls are mocked so the suite is deterministic and does
-not depend on publisher availability.
+The project is deliberately structured so that the same core functionality can be consumed by different interfaces:
 
-Run all tests:
+```text
+Public datasets
+      ↓
+Data adapters / cleaning
+      ↓
+Canonical application models
+      ↓
+Search / filtering / scoring services
+      ↓
+┌───────────┬───────────┬───────────┬───────────┐
+│    CLI    │ Streamlit │    API    │    MCP    │
+└───────────┴───────────┴───────────┴───────────┘
+```
 
-```powershell
+
+## Development
+
+```bash
+python -m pip install -e ".[dev]"
 python -m pytest
 ```
 
-Coverage is collected automatically and the test run fails if total coverage
-falls below 95%. Continuous integration runs the same suite on every push, every
-pull request and once per day at 06:30 Europe/London. The badges at the top of
-this README show the current CI state and coverage for `main`.
+External HTTP calls are mocked by the test suite.
 
-For verbose test names:
+Coverage is enforced in CI and the build fails if total coverage drops below 95%.
 
-```powershell
-python -m pytest -v
-```
+GitHub Actions runs the tests on pushes, pull requests and on a daily schedule.
 
-## Continuous integration
+## License
 
-GitHub Actions runs the test suite on every push and pull request, and once per
-day at 06:30 Europe/London. Coverage is uploaded to Codecov from the same run.
-
+School Finder is licensed under the [GNU Affero General Public License v3.0](LICENSE).
