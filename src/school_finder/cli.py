@@ -293,7 +293,7 @@ def _run_lookup(args: argparse.Namespace) -> int:
             else ""
         )
         log(
-            f"Warning: {result.postcode.postcode} is marked as terminated"
+            "Warning: The supplied is marked as terminated"
             f"{detail}; using its last known ONSPD coordinates."
         )
 
@@ -307,11 +307,10 @@ def _run_lookup(args: argparse.Namespace) -> int:
         print(json.dumps(list(result.flat_records), indent=2, ensure_ascii=False))
     else:
         if not result.schools:
-            print(f"No schools matched the search around {result.postcode.postcode}.")
+            print("No schools matched the search around the supplied postcode.")
             return 0
         print(
-            f"Found {len(result.schools)} schools matching search around "
-            f"{result.postcode.postcode}:\n"
+            f"Found {len(result.schools)} schools matching search criteria :\n"
         )
         records = pd.DataFrame(result.flat_records)
         columns = [
