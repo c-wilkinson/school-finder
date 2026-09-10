@@ -118,6 +118,63 @@ LOCAL_AUTHORITY_COLUMNS = [
     "local_authority_name",
 ]
 
+ATTENDANCE_COLUMNS = [
+    "attendance_year",
+    "attendance_enrolments",
+    "overall_absence_pct",
+    "authorised_absence_pct",
+    "unauthorised_absence_pct",
+    "persistent_absence_pct",
+    "severe_absence_pct",
+    "attendance_source",
+    "attendance_source_dataset_id",
+    "attendance_source_urn",
+    "attendance_source_school_name",
+    "attendance_source_kind",
+    "attendance_source_link_depth",
+]
+
+BEHAVIOUR_COLUMNS = [
+    "behaviour_year",
+    "behaviour_pupil_headcount",
+    "suspension_count",
+    "suspension_rate",
+    "pupils_with_one_or_more_suspension",
+    "pupils_with_one_or_more_suspension_rate",
+    "permanent_exclusion_count",
+    "permanent_exclusion_rate",
+    "behaviour_source",
+    "behaviour_source_dataset_id",
+    "behaviour_source_urn",
+    "behaviour_source_school_name",
+    "behaviour_source_kind",
+    "behaviour_source_link_depth",
+]
+
+WORKFORCE_COLUMNS = [
+    "workforce_year",
+    "workforce_ratio_year",
+    "pupil_fte",
+    "teacher_fte",
+    "qualified_teacher_fte",
+    "classroom_teacher_fte",
+    "teaching_assistant_fte",
+    "support_staff_fte",
+    "teachers_without_qts_fte",
+    "part_time_teacher_pct",
+    "pupil_qualified_teacher_ratio",
+    "pupil_teacher_ratio",
+    "pupil_adult_ratio",
+    "workforce_source",
+    "workforce_source_dataset_id",
+    "workforce_ratio_source",
+    "workforce_ratio_source_dataset_id",
+    "workforce_source_urn",
+    "workforce_source_school_name",
+    "workforce_source_kind",
+    "workforce_source_link_depth",
+]
+
 
 def is_mainstream(establishment_type: pd.Series) -> pd.Series:
     lowered = establishment_type.fillna("").str.casefold()
@@ -362,7 +419,14 @@ def find_schools(
     )
     output_columns = OUTPUT_COLUMNS + [
         column
-        for column in LOCAL_AUTHORITY_COLUMNS + PROGRESS8_PROVENANCE_COLUMNS + SCORE_OUTPUT_COLUMNS
+        for column in (
+            LOCAL_AUTHORITY_COLUMNS
+            + PROGRESS8_PROVENANCE_COLUMNS
+            + ATTENDANCE_COLUMNS
+            + BEHAVIOUR_COLUMNS
+            + WORKFORCE_COLUMNS
+            + SCORE_OUTPUT_COLUMNS
+        )
         if column in eligible.columns
     ]
     return eligible[output_columns].reset_index(drop=True)

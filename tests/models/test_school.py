@@ -31,12 +31,32 @@ def test_maps_all_current_and_future_canonical_fields_into_nested_contract():
         "ofsted_inclusion":"Strong", "ofsted_curriculum_teaching":"Good",
         "ofsted_achievement":"Good", "ofsted_attendance_behaviour":"Good",
         "ofsted_personal_development":"Good", "ofsted_leadership":"Good",
-        "ofsted_adjusted_score":"3.5", "overall_absence_pct":"7.4",
-        "persistent_absence_pct":"12", "attendance_year":"202425", "suspension_count":"18",
-        "suspension_pct":"2.3", "permanent_exclusion_count":"1",
-        "permanent_exclusion_pct":"0.1", "behaviour_year":"202425", "pupil_headcount":"960",
-        "teacher_headcount":"60", "classroom_teacher_headcount":"48",
-        "teaching_assistant_headcount":"12", "workforce_year":"2025", "admissions_policy":"Non-selective",
+        "ofsted_adjusted_score":"3.5", "attendance_enrolments":"960",
+        "overall_absence_pct":"7.4", "authorised_absence_pct":"5.1",
+        "unauthorised_absence_pct":"2.3", "persistent_absence_pct":"12",
+        "severe_absence_pct":"1.2", "attendance_year":"202425",
+        "attendance_source":"DfE absence", "attendance_source_dataset_id":"att-id",
+        "attendance_source_urn":"111", "attendance_source_school_name":"Old school",
+        "attendance_source_kind":"predecessor", "attendance_source_link_depth":"1",
+        "behaviour_pupil_headcount":"960", "suspension_count":"18",
+        "suspension_rate":"2.3", "pupils_with_one_or_more_suspension":"14",
+        "pupils_with_one_or_more_suspension_rate":"1.5",
+        "permanent_exclusion_count":"1", "permanent_exclusion_rate":"0.1",
+        "behaviour_year":"202425", "behaviour_source":"DfE behaviour",
+        "behaviour_source_dataset_id":"beh-id", "behaviour_source_urn":"123456",
+        "behaviour_source_school_name":"Example School", "behaviour_source_kind":"current",
+        "behaviour_source_link_depth":"0",
+        "pupil_fte":"960", "teacher_fte":"60", "qualified_teacher_fte":"58",
+        "classroom_teacher_fte":"48", "teaching_assistant_fte":"12",
+        "support_staff_fte":"25", "teachers_without_qts_fte":"2",
+        "part_time_teacher_pct":"20", "pupil_qualified_teacher_ratio":"16.55",
+        "pupil_teacher_ratio":"16", "pupil_adult_ratio":"11.3",
+        "workforce_year":"202526", "workforce_ratio_year":"202526",
+        "workforce_source":"DfE workforce", "workforce_source_dataset_id":"wf-id",
+        "workforce_ratio_source":"DfE ratios", "workforce_ratio_source_dataset_id":"ratio-id",
+        "workforce_source_urn":"123456", "workforce_source_school_name":"Example School",
+        "workforce_source_kind":"current", "workforce_source_link_depth":"0",
+        "admissions_policy":"Non-selective",
         "selective":"no", "published_admission_number":"240", "catchment_description":"Area",
         "last_offer_distance_miles":"2.4", "last_offer_year":"2026", "admissions_likelihood":"Likely",
         "distance_miles":"1.25", "walking_minutes":"42", "public_transport_minutes":"27",
@@ -54,7 +74,11 @@ def test_maps_all_current_and_future_canonical_fields_into_nested_contract():
     assert result.inspection.equivalent_rating == "Good"
     assert result.inspection.equivalent_basis == "official"
     assert result.attendance.overall_absence_pct == 7.4
+    assert result.attendance.authorised_absence_pct == 5.1
+    assert result.attendance.source_kind == "predecessor"
     assert result.behaviour.permanent_exclusion_count == 1
+    assert result.behaviour.suspension_rate == 2.3
+    assert result.workforce.pupil_teacher_ratio == 16.0
     assert result.workforce.pupils_per_classroom_teacher == 20.0
     assert result.workforce.pupils_per_classroom_and_support_staff == 16.0
     assert result.admissions.selective is False
@@ -73,10 +97,10 @@ def test_missing_identity_values_default_to_empty_strings_and_no_user_assessment
 
 def test_workforce_derived_ratios_handle_missing_and_zero_values():
     assert WorkforceStatistics().pupils_per_classroom_teacher is None
-    assert WorkforceStatistics(pupil_headcount=100, classroom_teacher_headcount=0).pupils_per_classroom_teacher is None
-    assert WorkforceStatistics(pupil_headcount=100).pupils_per_classroom_and_support_staff is None
-    assert WorkforceStatistics(pupil_headcount=100, classroom_teacher_headcount=0, teaching_assistant_headcount=0).pupils_per_classroom_and_support_staff is None
-    assert WorkforceStatistics(pupil_headcount=100, classroom_teacher_headcount=4, teaching_assistant_headcount=1).pupils_per_classroom_and_support_staff == 20.0
+    assert WorkforceStatistics(pupil_fte=100, classroom_teacher_fte=0).pupils_per_classroom_teacher is None
+    assert WorkforceStatistics(pupil_fte=100).pupils_per_classroom_and_support_staff is None
+    assert WorkforceStatistics(pupil_fte=100, classroom_teacher_fte=0, teaching_assistant_fte=0).pupils_per_classroom_and_support_staff is None
+    assert WorkforceStatistics(pupil_fte=100, classroom_teacher_fte=4, teaching_assistant_fte=1).pupils_per_classroom_and_support_staff == 20.0
 
 
 def test_travel_saved_minutes_handles_missing_and_negative_savings():
@@ -138,6 +162,42 @@ def test_benchmark_from_flat_record_maps_metadata_and_academics():
         "attainment8": "46.8",
         "ebacc_entry_pct": "39.2",
         "ebacc_aps": "4.15",
+        "attendance_year": "202425",
+        "attendance_enrolments": "1000",
+        "overall_absence_pct": "7.0",
+        "authorised_absence_pct": "5.0",
+        "unauthorised_absence_pct": "2.0",
+        "persistent_absence_pct": "18.0",
+        "severe_absence_pct": "2.0",
+        "attendance_source": "absence",
+        "attendance_source_dataset_id": "absence-id",
+        "behaviour_year": "202425",
+        "behaviour_pupil_headcount": "1000",
+        "suspension_count": "120",
+        "suspension_rate": "12.0",
+        "pupils_with_one_or_more_suspension": "80",
+        "pupils_with_one_or_more_suspension_rate": "8.0",
+        "permanent_exclusion_count": "1",
+        "permanent_exclusion_rate": "0.1",
+        "behaviour_source": "behaviour",
+        "behaviour_source_dataset_id": "beh-id",
+        "workforce_year": "202526",
+        "workforce_ratio_year": "202526",
+        "pupil_fte": "1000",
+        "teacher_fte": "60",
+        "qualified_teacher_fte": "58",
+        "classroom_teacher_fte": "50",
+        "teaching_assistant_fte": "12",
+        "support_staff_fte": "30",
+        "teachers_without_qts_fte": "2",
+        "part_time_teacher_pct": "19",
+        "pupil_qualified_teacher_ratio": "17.2",
+        "pupil_teacher_ratio": "16.7",
+        "pupil_adult_ratio": "11.1",
+        "workforce_source": "workforce",
+        "workforce_source_dataset_id": "wf-id",
+        "workforce_ratio_source": "ratios",
+        "workforce_ratio_source_dataset_id": "ratio-id",
     })
     assert benchmark.label == "Hampshire"
     assert benchmark.level == "Local authority"
@@ -152,6 +212,13 @@ def test_benchmark_from_flat_record_maps_metadata_and_academics():
     assert benchmark.academics.attainment8 == 46.8
     assert benchmark.academics.ebacc_entry_pct == 39.2
     assert benchmark.academics.ebacc_aps == 4.15
+    assert benchmark.attendance.overall_absence_pct == 7.0
+    assert benchmark.attendance.enrolments == 1000
+    assert benchmark.behaviour.suspension_rate == 12.0
+    assert benchmark.behaviour.permanent_exclusion_rate == 0.1
+    assert benchmark.workforce.teacher_fte == 60.0
+    assert benchmark.workforce.pupil_teacher_ratio == 16.7
+    assert benchmark.workforce.ratio_year == "202526"
 
 
 def test_benchmark_from_flat_record_handles_missing_identity_and_metrics():
@@ -179,7 +246,7 @@ def test_inspection_year_property():
 
 
 def test_workforce_support_ratio_is_none_without_pupil_count():
-    assert WorkforceStatistics(classroom_teacher_headcount=4, teaching_assistant_headcount=1).pupils_per_classroom_and_support_staff is None
+    assert WorkforceStatistics(classroom_teacher_fte=4, teaching_assistant_fte=1).pupils_per_classroom_and_support_staff is None
 
 
 def test_missing_detection_tolerates_objects_with_broken_inequality():

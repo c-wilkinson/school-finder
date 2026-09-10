@@ -288,7 +288,7 @@ def test_run_lookup_table_prints_benchmark_context(monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "local_authority_name" in out
     assert "Hampshire" in out
-    assert "Benchmark context (all state-funded schools)" in out
+    assert "Benchmark context (state-funded secondary schools where applicable)" in out
     assert "202425" in out
     assert "202324" in out
 
