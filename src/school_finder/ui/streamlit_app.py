@@ -26,11 +26,26 @@ from school_finder.models.preferences import PreferenceMetric, PreferencePreset
 from school_finder.models.school import SchoolResult
 from school_finder.models.search import SchoolSearchResult
 from school_finder.services.search import search_schools
+from school_finder.services.subjects import get_school_subject_results
 from school_finder.ui.controls import (
     CUSTOM_DEFAULT_WEIGHTS,
     PRESET_LABELS,
     SORT_LABELS,
     build_search_request,
+)
+from school_finder.ui.detail import (
+    academic_rows,
+    attendance_rows,
+    behaviour_rows,
+    destination_rows,
+    find_school,
+    inspection_rows,
+    overview_rows,
+    pastoral_rows,
+    relevant_benchmarks,
+    subject_rows,
+    workforce_ratio_rows,
+    workforce_rows,
 )
 from school_finder.ui.formatting import (
     benchmark_comparisons,
@@ -47,7 +62,12 @@ from school_finder.ui.formatting import (
     ofsted_display,
     pastoral_note,
 )
-from school_finder.ui.state import get_latest_search, set_latest_search
+from school_finder.ui.state import (
+    get_latest_search,
+    get_selected_school_urn,
+    select_school,
+    set_latest_search,
+)
 
 REPO_URL = "https://github.com/c-wilkinson/school-finder"
 BLOG_URL = "https://www.cadavre.co.uk/"
@@ -70,10 +90,16 @@ def _cached_search_impl(data_dir: str, request):
     return search_schools(Path(data_dir), request)
 
 
+def _cached_subjects_impl(data_dir: str, urn: str):
+    return get_school_subject_results(Path(data_dir), urn)
+
+
 if st is not None:
     _cached_search = st.cache_data(ttl=900, show_spinner=False)(_cached_search_impl)
+    _cached_subjects = st.cache_data(ttl=900, show_spinner=False)(_cached_subjects_impl)
 else:
     _cached_search = _cached_search_impl
+    _cached_subjects = _cached_subjects_impl
 
 
 def _optional_number(label: str, **kwargs) -> float | None:
@@ -160,7 +186,7 @@ def _sidebar_form():
                     sort_field = SORT_LABELS[sort_label]
                     descending = st.checkbox("Descending")
 
-            submitted = st.form_submit_button("Find schools", type="primary", use_container_width=True)
+            submitted = st.form_submit_button("Find schools", type="primary", width="stretch")
 
         st.markdown("---")
         st.markdown(f"[View the project on GitHub]({REPO_URL})")
@@ -203,7 +229,12 @@ def _sidebar_form():
     )
 
 
-def _render_school_card(index: int, school: SchoolResult, result: SchoolSearchResult) -> None:
+def _render_school_card(
+    index: int,
+    school: SchoolResult,
+    result: SchoolSearchResult,
+    detail_page=None,
+) -> None:
     with st.container(border=True):
         title, distance, match = st.columns([6, 2, 2])
         title.markdown(f"### {index}. {school.identity.name}")
@@ -248,8 +279,15 @@ def _render_school_card(index: int, school: SchoolResult, result: SchoolSearchRe
         if benchmark and comparisons:
             st.caption(f"Compared with {benchmark.label}: " + " • ".join(comparisons))
 
+        if detail_page is not None and st.button(
+            "View details",
+            key=f"school-details-{school.identity.urn}",
+        ):
+            select_school(st.session_state, school.identity.urn)
+            st.switch_page(detail_page)
 
-def _render_results(result: SchoolSearchResult) -> None:
+
+def _render_results(result: SchoolSearchResult, detail_page=None) -> None:
     if not result.postcode.is_current:
         detail = f" ({result.postcode.termination_date})" if result.postcode.termination_date else ""
         st.warning(f"The supplied postcode is marked as terminated{detail}; using its last known coordinates.")
@@ -263,7 +301,7 @@ def _render_results(result: SchoolSearchResult) -> None:
         st.caption("Schools are ranked using your selected preferences. Missing data is not treated as zero.")
 
     for index, school in enumerate(result.schools, start=1):
-        _render_school_card(index, school, result)
+        _render_school_card(index, school, result, detail_page)
 
     with st.expander("What do these measures mean?"):
         for label in (
@@ -292,12 +330,12 @@ def _render_results(result: SchoolSearchResult) -> None:
     if result.benchmarks:
         with st.expander("Benchmark context"):
             st.caption("National and local-authority comparison figures where available.")
-            st.dataframe(pd.DataFrame(benchmark_rows(result.benchmarks)), hide_index=True, use_container_width=True)
+            st.dataframe(pd.DataFrame(benchmark_rows(result.benchmarks)), hide_index=True, width="stretch")
 
     st.caption("Ofsted values may be School Finder equivalents where no official overall grade is available.")
 
 
-def _search_page() -> None:
+def _search_page(detail_page=None) -> None:
     """Render the school search page and preserve the latest successful result."""
     st.title("School Finder")
     st.markdown(
@@ -319,9 +357,194 @@ def _search_page() -> None:
 
     result = get_latest_search(st.session_state)
     if result is not None:
-        _render_results(result)
+        _render_results(result, detail_page)
     elif not submitted and not search_failed:
         st.info("Enter a postcode in the sidebar to get started.")
+
+
+def _render_detail_table(rows: list[dict[str, str]], empty_message: str) -> None:
+    if not rows:
+        st.info(empty_message)
+        return
+    st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
+
+
+def _render_overview(school: SchoolResult) -> None:
+    website = normalise_website(school.identity.website)
+    if website:
+        st.markdown(f"[School website]({website})")
+    _render_detail_table(overview_rows(school), "No school information is currently available.")
+
+
+def _render_academics(school: SchoolResult, benchmarks) -> None:
+    if school.academics.data_year:
+        st.caption(f"Performance data: {school.academics.data_year}")
+    if school.academics.progress8_year and school.academics.progress8_year != school.academics.data_year:
+        st.caption(f"Progress 8 uses the latest valid published cohort: {school.academics.progress8_year}.")
+    _render_detail_table(
+        academic_rows(school, benchmarks),
+        "No academic performance data is currently available for this school.",
+    )
+
+
+def _render_subjects(school: SchoolResult) -> None:
+    data_dir = os.environ.get("SCHOOL_FINDER_DATA_DIR", str(DEFAULT_DATA_DIR))
+    try:
+        subjects = _cached_subjects(data_dir, school.identity.urn)
+    except (SchoolFinderError, OSError, ImportError, ValueError) as exc:
+        st.warning(f"Subject-level results are unavailable: {exc}")
+        return
+    _render_detail_table(
+        subject_rows(subjects),
+        "No subject-level KS4 results are currently available for this school.",
+    )
+
+
+def _render_ofsted(school: SchoolResult) -> None:
+    rows = inspection_rows(school)
+    _render_detail_table(rows, "No Ofsted inspection detail is currently available for this school.")
+    inspection = school.inspection
+    if inspection.equivalent_rating and not inspection.rating:
+        explanation = inspection.equivalent_explanation or (
+            "No official overall effectiveness grade is published for this inspection. "
+            "School Finder derives an equivalent from Ofsted's published judgements."
+        )
+        st.info(explanation)
+    elif inspection.equivalent_rating and inspection.equivalent_rating != inspection.rating:
+        st.caption("The School Finder equivalent is shown separately from the official overall grade.")
+    if inspection.source_school_name and inspection.source_school_name != school.identity.name:
+        st.caption(
+            f"Inspection data source: {inspection.source_school_name}"
+            + (f" (URN {inspection.source_urn})" if inspection.source_urn else "")
+            + "."
+        )
+
+
+def _render_pastoral_behaviour(school: SchoolResult, benchmarks) -> None:
+    st.subheader("Parent View")
+    _render_detail_table(
+        pastoral_rows(school),
+        "No usable Ofsted Parent View data is currently available for this school.",
+    )
+    note = pastoral_note(school)
+    if note:
+        st.caption(note)
+    if school.pastoral.survey_year:
+        st.caption(f"Parent View survey year: {school.pastoral.survey_year}")
+    if school.pastoral.source_url:
+        st.markdown(f"[Parent View source]({school.pastoral.source_url})")
+
+    st.subheader("Attendance")
+    if school.attendance.data_year:
+        st.caption(f"Attendance data: {school.attendance.data_year}")
+    _render_detail_table(
+        attendance_rows(school, benchmarks),
+        "No attendance data is currently available for this school.",
+    )
+
+    st.subheader("Suspensions & exclusions")
+    if school.behaviour.data_year:
+        st.caption(f"Behaviour data: {school.behaviour.data_year}")
+    _render_detail_table(
+        behaviour_rows(school, benchmarks),
+        "No suspension or exclusion data is currently available for this school.",
+    )
+
+
+def _render_staffing(school: SchoolResult, benchmarks) -> None:
+    if school.workforce.data_year:
+        st.caption(f"Workforce data: {school.workforce.data_year}")
+    st.subheader("Ratios")
+    _render_detail_table(
+        workforce_ratio_rows(school, benchmarks),
+        "No staffing ratios are currently available for this school.",
+    )
+    st.subheader("Workforce")
+    _render_detail_table(
+        workforce_rows(school),
+        "No workforce totals are currently available for this school.",
+    )
+
+
+def _render_destinations(school: SchoolResult, benchmarks) -> None:
+    destination = school.destinations
+    if destination.destination_year:
+        cohort = f" for {destination.leaver_year} leavers" if destination.leaver_year else ""
+        st.caption(f"Destination data: {destination.destination_year}{cohort}")
+    _render_detail_table(
+        destination_rows(school, benchmarks),
+        "No destination data is currently available for this school.",
+    )
+
+
+def _detail_page(search_page=None) -> None:
+    """Render the selected school using the latest in-session search result."""
+    result = get_latest_search(st.session_state)
+    selected_urn = get_selected_school_urn(st.session_state)
+    school = find_school(result, selected_urn)
+
+    if school is None:
+        st.title("School detail")
+        st.info("Choose a school from your search results to view its full detail.")
+        if result is None:
+            st.caption("Your latest successful search will remain available while this session is open.")
+        if search_page is not None and st.button("← Back to find schools"):
+            st.switch_page(search_page)
+        return
+
+    if search_page is not None and st.button("← Back to results"):
+        st.switch_page(search_page)
+
+    st.title(school.identity.name)
+    details = [
+        school.identity.sector,
+        school.identity.age_range,
+        school.identity.gender,
+        school.identity.faith_status,
+        school.location.local_authority_name,
+    ]
+    st.caption(" • ".join(value for value in details if value))
+
+    metrics = st.columns(3)
+    metrics[0].metric("Distance", format_distance(school.travel.distance_miles), help=MEASURE_HELP["Distance"])
+    match_value = school.preference_score.overall if school.preference_score else None
+    metrics[1].metric("Match", format_match_score(match_value), help=MEASURE_HELP["Match"])
+    metrics[2].metric("Ofsted", ofsted_display(school), help=MEASURE_HELP["Ofsted"])
+
+    if school.preference_score and school.preference_score.coverage_pct < 100:
+        st.caption(
+            f"Match score uses {school.preference_score.coverage_pct:.0f}% of the requested preference data."
+        )
+
+    benchmarks = relevant_benchmarks(school, result.benchmarks)
+    if benchmarks:
+        st.caption("Benchmark columns use the matching local authority and England where available.")
+
+    tabs = st.tabs(
+        [
+            "Overview",
+            "Academics",
+            "Subjects",
+            "Ofsted",
+            "Pastoral & behaviour",
+            "Staffing",
+            "Destinations",
+        ]
+    )
+    with tabs[0]:
+        _render_overview(school)
+    with tabs[1]:
+        _render_academics(school, benchmarks)
+    with tabs[2]:
+        _render_subjects(school)
+    with tabs[3]:
+        _render_ofsted(school)
+    with tabs[4]:
+        _render_pastoral_behaviour(school, benchmarks)
+    with tabs[5]:
+        _render_staffing(school, benchmarks)
+    with tabs[6]:
+        _render_destinations(school, benchmarks)
 
 
 def main() -> None:
@@ -332,13 +555,24 @@ def main() -> None:
         )
 
     st.set_page_config(page_title="School Finder", page_icon="🏫", layout="wide")
+
+    pages = {}
     search_page = st.Page(
-        _search_page,
+        lambda: _search_page(pages["detail"]),
         title="Find schools",
         icon="🔎",
+        url_path="find-schools",
         default=True,
     )
-    navigation = st.navigation([search_page])
+    detail_page = st.Page(
+        lambda: _detail_page(pages["search"]),
+        title="School detail",
+        icon="🏫",
+        url_path="school-detail",
+    )
+    pages.update(search=search_page, detail=detail_page)
+
+    navigation = st.navigation([search_page, detail_page])
     navigation.run()
 
     st.markdown("---")
