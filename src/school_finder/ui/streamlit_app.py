@@ -1,4 +1,4 @@
-"""Streamlit MVP for School Finder."""
+"""Streamlit application shell for School Finder."""
 
 from __future__ import annotations
 
@@ -47,6 +47,7 @@ from school_finder.ui.formatting import (
     ofsted_display,
     pastoral_note,
 )
+from school_finder.ui.state import get_latest_search, set_latest_search
 
 REPO_URL = "https://github.com/c-wilkinson/school-finder"
 BLOG_URL = "https://www.cadavre.co.uk/"
@@ -296,6 +297,33 @@ def _render_results(result: SchoolSearchResult) -> None:
     st.caption("Ofsted values may be School Finder equivalents where no official overall grade is available.")
 
 
+def _search_page() -> None:
+    """Render the school search page and preserve the latest successful result."""
+    st.title("School Finder")
+    st.markdown(
+        "Find, compare and rank secondary schools in England using public DfE, Ofsted and ONS data."
+    )
+    st.caption("Choose what matters to you, then School Finder ranks the schools that match your filters.")
+
+    submitted, request = _sidebar_form()
+    search_failed = False
+    if submitted and request is not None:
+        data_dir = os.environ.get("SCHOOL_FINDER_DATA_DIR", str(DEFAULT_DATA_DIR))
+        try:
+            with st.spinner("Finding schools..."):
+                result = _cached_search(data_dir, request)
+            set_latest_search(st.session_state, result)
+        except (SchoolFinderError, OSError, ImportError, ValueError) as exc:
+            search_failed = True
+            st.error(str(exc))
+
+    result = get_latest_search(st.session_state)
+    if result is not None:
+        _render_results(result)
+    elif not submitted and not search_failed:
+        st.info("Enter a postcode in the sidebar to get started.")
+
+
 def main() -> None:
     if st is None:
         raise ImportError(
@@ -304,23 +332,14 @@ def main() -> None:
         )
 
     st.set_page_config(page_title="School Finder", page_icon="🏫", layout="wide")
-    st.title("School Finder")
-    st.markdown(
-        "Find, compare and rank secondary schools in England using public DfE, Ofsted and ONS data."
+    search_page = st.Page(
+        _search_page,
+        title="Find schools",
+        icon="🔎",
+        default=True,
     )
-    st.caption("Choose what matters to you, then School Finder ranks the schools that match your filters.")
-
-    submitted, request = _sidebar_form()
-    if not submitted:
-        st.info("Enter a postcode in the sidebar to get started.")
-    elif request is not None:
-        data_dir = os.environ.get("SCHOOL_FINDER_DATA_DIR", str(DEFAULT_DATA_DIR))
-        try:
-            with st.spinner("Finding schools..."):
-                result = _cached_search(data_dir, request)
-            _render_results(result)
-        except (SchoolFinderError, OSError, ImportError, ValueError) as exc:
-            st.error(str(exc))
+    navigation = st.navigation([search_page])
+    navigation.run()
 
     st.markdown("---")
     st.caption("Built by Craig Wilkinson using public DfE, Ofsted and ONS data.")

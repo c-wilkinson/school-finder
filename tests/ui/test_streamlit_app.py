@@ -33,6 +33,7 @@ from school_finder.models.school import (
 from school_finder.models.scoring import SchoolScore
 from school_finder.models.search import PostcodeLocation, SchoolSearchRequest, SchoolSearchResult
 from school_finder.ui import streamlit_app
+from school_finder.ui.state import LATEST_SEARCH_KEY
 
 
 class FakeColumn:
@@ -46,12 +47,24 @@ class FakeColumn:
         self.parent.calls.append(("metric", label, value, kwargs))
 
 
+class FakePage:
+    def __init__(self, parent, page, **kwargs):
+        self.parent = parent
+        self.page = page
+        self.kwargs = kwargs
+
+    def run(self):
+        self.parent.calls.append(("page_run", self.kwargs))
+        return self.page()
+
+
 class FakeStreamlit:
     def __init__(self, answers=None, submitted=False):
         self.answers = answers or {}
         self.submitted = submitted
         self.calls = []
         self.sidebar = self
+        self.session_state = {}
 
     def __enter__(self):
         return self
@@ -68,6 +81,14 @@ class FakeStreamlit:
 
     def set_page_config(self, **kwargs):
         self.calls.append(("set_page_config", kwargs))
+
+    def Page(self, page, **kwargs):
+        self.calls.append(("Page", kwargs))
+        return FakePage(self, page, **kwargs)
+
+    def navigation(self, pages, **kwargs):
+        self.calls.append(("navigation", len(pages), kwargs))
+        return pages[0]
 
     def title(self, text):
         self.calls.append(("title", text))
@@ -187,11 +208,11 @@ def _benchmark():
 
 def _result(*, schools=None, current=True, termination_date=None, preferences=True, benchmarks=None):
     request = SchoolSearchRequest(
-        "RG22 6SX",
+        "SW1A 2AA",
         radius_miles=5,
         preferences=(
             streamlit_app.build_search_request(
-                postcode="RG22 6SX",
+                postcode="SW1A 2AA",
                 radius_miles=5,
                 limit=10,
                 preset=PreferencePreset.BALANCED,
@@ -202,7 +223,7 @@ def _result(*, schools=None, current=True, termination_date=None, preferences=Tr
     )
     return SchoolSearchResult(
         request=request,
-        postcode=PostcodeLocation("RG22 6SX", 1, 2, current, termination_date),
+        postcode=PostcodeLocation("SW1A 2AA", 1, 2, current, termination_date),
         schools=tuple(schools if schools is not None else [_school()]),
         benchmarks=tuple(benchmarks if benchmarks is not None else [_benchmark()]),
     )
@@ -273,21 +294,21 @@ def test_sidebar_form_not_submitted_still_renders_links(monkeypatch):
 
 
 def test_sidebar_form_builds_balanced_request(monkeypatch):
-    fake = FakeStreamlit({"Postcode": "RG22 6SX"}, submitted=True)
+    fake = FakeStreamlit({"Postcode": "SW1A 2AA"}, submitted=True)
     monkeypatch.setattr(streamlit_app, "st", fake)
     submitted, request = streamlit_app._sidebar_form()
     assert submitted is True
-    assert request.postcode == "RG22 6SX"
+    assert request.postcode == "SW1A 2AA"
     assert request.radius_miles == 5
     assert request.limit == 10
     assert request.preferences == streamlit_app.build_search_request(
-        postcode="RG22 6SX", radius_miles=5, limit=10
+        postcode="SW1A 2AA", radius_miles=5, limit=10
     ).preferences
 
 
 def test_sidebar_form_supports_custom_weights_and_all_filters(monkeypatch):
     answers = {
-        "Postcode": "RG22 6SX",
+        "Postcode": "SW1A 2AA",
         "Radius (miles)": 7.5,
         "Maximum results": 15,
         "What matters most?": "Custom",
@@ -335,7 +356,7 @@ def test_sidebar_form_supports_custom_weights_and_all_filters(monkeypatch):
 def test_sidebar_form_supports_sort_only(monkeypatch):
     fake = FakeStreamlit(
         {
-            "Postcode": "RG22 6SX",
+            "Postcode": "SW1A 2AA",
             "What matters most?": "No preference scoring",
             "Sort by": "Pastoral care",
             "Descending": True,
@@ -466,7 +487,7 @@ def test_sidebar_form_rejects_blank_postcode(monkeypatch):
 
 
 def test_sidebar_form_rejects_all_zero_custom_weights(monkeypatch):
-    answers = {"Postcode": "RG22 6SX", "What matters most?": "Custom"}
+    answers = {"Postcode": "SW1A 2AA", "What matters most?": "Custom"}
     answers.update({label: 0 for label in streamlit_app._WEIGHT_LABELS.values()})
     fake = FakeStreamlit(answers, submitted=True)
     monkeypatch.setattr(streamlit_app, "st", fake)
@@ -485,7 +506,7 @@ def test_main_submitted_invalid_form_does_not_search(monkeypatch):
 def test_main_runs_search_and_renders_results(monkeypatch, tmp_path):
     fake = FakeStreamlit()
     monkeypatch.setattr(streamlit_app, "st", fake)
-    request = SchoolSearchRequest("RG22 6SX")
+    request = SchoolSearchRequest("SW1A 2AA")
     expected = _result(preferences=False)
     monkeypatch.setattr(streamlit_app, "_sidebar_form", lambda: (True, request))
     monkeypatch.setenv("SCHOOL_FINDER_DATA_DIR", str(tmp_path))
@@ -501,8 +522,66 @@ def test_main_runs_search_and_renders_results(monkeypatch, tmp_path):
 def test_main_shows_search_errors(monkeypatch):
     fake = FakeStreamlit()
     monkeypatch.setattr(streamlit_app, "st", fake)
-    request = SchoolSearchRequest("RG22 6SX")
+    request = SchoolSearchRequest("SW1A 2AA")
     monkeypatch.setattr(streamlit_app, "_sidebar_form", lambda: (True, request))
     monkeypatch.setattr(streamlit_app, "_cached_search", lambda *args: (_ for _ in ()).throw(ValueError("bad search")))
     streamlit_app.main()
+    assert any(call[0] == "error" and "bad search" in call[1] for call in fake.calls)
+
+
+def test_main_uses_page_navigation_shell(monkeypatch):
+    fake = FakeStreamlit()
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    monkeypatch.setattr(streamlit_app, "_sidebar_form", lambda: (False, None))
+
+    streamlit_app.main()
+
+    page_calls = [call for call in fake.calls if call[0] == "Page"]
+    assert page_calls == [
+        (
+            "Page",
+            {
+                "title": "Find schools",
+                "icon": "🔎",
+                "default": True,
+            },
+        )
+    ]
+    assert ("navigation", 1, {}) in fake.calls
+    assert any(call[0] == "page_run" for call in fake.calls)
+
+
+def test_search_page_renders_stored_result_without_resubmitting(monkeypatch):
+    fake = FakeStreamlit()
+    expected = _result(preferences=False)
+    fake.session_state[LATEST_SEARCH_KEY] = expected
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    monkeypatch.setattr(streamlit_app, "_sidebar_form", lambda: (False, None))
+    rendered = []
+    monkeypatch.setattr(streamlit_app, "_render_results", rendered.append)
+
+    streamlit_app._search_page()
+
+    assert rendered == [expected]
+    assert not any(call[0] == "info" and "get started" in call[1] for call in fake.calls)
+
+
+def test_failed_search_preserves_and_renders_previous_result(monkeypatch):
+    fake = FakeStreamlit()
+    previous = _result(preferences=False)
+    fake.session_state[LATEST_SEARCH_KEY] = previous
+    request = SchoolSearchRequest("SW1A 2AA")
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    monkeypatch.setattr(streamlit_app, "_sidebar_form", lambda: (True, request))
+    monkeypatch.setattr(
+        streamlit_app,
+        "_cached_search",
+        lambda *args: (_ for _ in ()).throw(ValueError("bad search")),
+    )
+    rendered = []
+    monkeypatch.setattr(streamlit_app, "_render_results", rendered.append)
+
+    streamlit_app._search_page()
+
+    assert rendered == [previous]
     assert any(call[0] == "error" and "bad search" in call[1] for call in fake.calls)
