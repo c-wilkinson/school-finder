@@ -15,6 +15,6 @@ HTTP_CHUNK_SIZE = 1024 * 1024
 PARQUET_ROW_GROUP_SIZE = 100_000
 
 USER_AGENT = (
-    "school-finder-prototype/0.6 "
+    "school-finder-prototype/0.7 "
     "(public DfE and ONS data; local dataset builder)"
 )
