@@ -22,6 +22,16 @@ _EES_DATASET_URL = "https://explore-education-statistics.service.gov.uk/data-cat
 BEHAVIOUR_SOURCE_NAME = "DfE suspensions and permanent exclusions - school level"
 BEHAVIOUR_BENCHMARK_SOURCE_NAME = "DfE suspensions and permanent exclusions benchmarks"
 
+BEHAVIOUR_METRICS = {
+    "behaviour_pupil_headcount": "headcount",
+    "suspension_count": "suspension",
+    "suspension_rate": "susp_rate",
+    "pupils_with_one_or_more_suspension": "one_plus_susp",
+    "pupils_with_one_or_more_suspension_rate": "one_plus_susp_rate",
+    "permanent_exclusion_count": "perm_excl",
+    "permanent_exclusion_rate": "perm_excl_rate",
+}
+
 
 def _source(dataset_id: str, name: str) -> CsvSource:
     return CsvSource(
@@ -57,7 +67,7 @@ def discover_behaviour_benchmark_source(session: requests.Session) -> CsvSource:
     )
 
 
-def _latest_rows(frame: pd.DataFrame, source_name: str) -> tuple[pd.DataFrame, str]:
+def _time_rows(frame: pd.DataFrame, source_name: str) -> tuple[pd.DataFrame, str]:
     time_col = find_column(frame, "time_period")
     if time_col is None:
         raise SchoolFinderError(f"{source_name} CSV is missing time_period.")
@@ -66,49 +76,68 @@ def _latest_rows(frame: pd.DataFrame, source_name: str) -> tuple[pd.DataFrame, s
     work = work.dropna(subset=["_time_num"])
     if work.empty:
         raise SchoolFinderError(f"{source_name} CSV contained no valid time periods.")
+    return work, time_col
+
+
+def _latest_rows(frame: pd.DataFrame, source_name: str) -> tuple[pd.DataFrame, str]:
+    work, time_col = _time_rows(frame, source_name)
     latest = int(work["_time_num"].max())
     return work[work["_time_num"] == latest].copy(), time_col
 
 
 def _metrics(frame: pd.DataFrame) -> dict[str, pd.Series]:
-    mapping = {
-        "behaviour_pupil_headcount": "headcount",
-        "suspension_count": "suspension",
-        "suspension_rate": "susp_rate",
-        "pupils_with_one_or_more_suspension": "one_plus_susp",
-        "pupils_with_one_or_more_suspension_rate": "one_plus_susp_rate",
-        "permanent_exclusion_count": "perm_excl",
-        "permanent_exclusion_rate": "perm_excl_rate",
-    }
     values: dict[str, pd.Series] = {}
-    for output, source_name in mapping.items():
+    for output, source_name in BEHAVIOUR_METRICS.items():
         col = find_column(frame, source_name)
-        values[output] = numeric_quality(frame[col]) if col else pd.Series(pd.NA, index=frame.index)
+        values[output] = (
+            numeric_quality(frame[col])
+            if col is not None
+            else pd.Series(pd.NA, index=frame.index, dtype="object")
+        )
     return values
 
 
-def read_behaviour_school(path: Path) -> pd.DataFrame:
-    frame = read_public_csv(path, "DfE suspensions and exclusions school-level")
+def _school_frame(frame: pd.DataFrame, *, latest_only: bool) -> pd.DataFrame:
     urn_col = find_column(frame, "school_urn", "urn")
     level_col = find_column(frame, "geographic_level")
     if urn_col is None:
         raise SchoolFinderError("DfE behaviour school CSV is missing school_urn.")
     if level_col is not None:
         frame = frame[clean_text_series(frame[level_col]).str.casefold().eq("school")].copy()
-    current, time_col = _latest_rows(frame, "DfE behaviour school")
+    rows, time_col = (
+        _latest_rows(frame, "DfE behaviour school")
+        if latest_only
+        else _time_rows(frame, "DfE behaviour school")
+    )
     result = pd.DataFrame(
         {
-            "urn": clean_text_series(current[urn_col]),
-            "behaviour_year": clean_text_series(current[time_col]),
-            **_metrics(current),
+            "urn": clean_text_series(rows[urn_col]),
+            "behaviour_year": clean_text_series(rows[time_col]),
+            **_metrics(rows),
         }
     )
     result["behaviour_source"] = BEHAVIOUR_SOURCE_NAME
     result["behaviour_source_dataset_id"] = BEHAVIOUR_SCHOOL_DATASET_ID
+    subset = ["urn"] if latest_only else ["urn", "behaviour_year"]
     return (
         result[result["urn"].ne("")]
-        .drop_duplicates("urn", keep="last")
+        .drop_duplicates(subset, keep="last")
         .reset_index(drop=True)
+    )
+
+
+def read_behaviour_school(path: Path) -> pd.DataFrame:
+    return _school_frame(
+        read_public_csv(path, "DfE suspensions and exclusions school-level"),
+        latest_only=True,
+    )
+
+
+def read_behaviour_school_history(path: Path) -> pd.DataFrame:
+    """Return all published school-level behaviour rows by academic year."""
+    return _school_frame(
+        read_public_csv(path, "DfE suspensions and exclusions school-level"),
+        latest_only=False,
     )
 
 
@@ -136,8 +165,7 @@ def _benchmark_identity(frame: pd.DataFrame) -> pd.DataFrame:
     )
 
 
-def read_behaviour_benchmarks(path: Path) -> pd.DataFrame:
-    frame = read_public_csv(path, "DfE suspensions and exclusions benchmarks")
+def _benchmark_frame(frame: pd.DataFrame, *, latest_only: bool) -> pd.DataFrame:
     level_col = find_column(frame, "geographic_level")
     phase_col = find_column(frame, "education_phase", "school_type")
     if level_col is None or phase_col is None:
@@ -152,16 +180,38 @@ def read_behaviour_benchmarks(path: Path) -> pd.DataFrame:
     ].copy()
     if frame.empty:
         raise SchoolFinderError("DfE behaviour benchmark CSV contained no secondary benchmark rows.")
-    current, time_col = _latest_rows(frame, "DfE behaviour benchmark")
+    rows, time_col = (
+        _latest_rows(frame, "DfE behaviour benchmark")
+        if latest_only
+        else _time_rows(frame, "DfE behaviour benchmark")
+    )
 
-    result = _benchmark_identity(current)
-    result["behaviour_year"] = clean_text_series(current[time_col])
-    for name, values in _metrics(current).items():
+    result = _benchmark_identity(rows)
+    result["behaviour_year"] = clean_text_series(rows[time_col])
+    for name, values in _metrics(rows).items():
         result[name] = values
     result["behaviour_source"] = BEHAVIOUR_BENCHMARK_SOURCE_NAME
     result["behaviour_source_dataset_id"] = BEHAVIOUR_BENCHMARK_DATASET_ID
+    subset = ["benchmark_level", "benchmark_code"]
+    if not latest_only:
+        subset.append("behaviour_year")
     return (
         result[result["benchmark_code"].ne("")]
-        .drop_duplicates(["benchmark_level", "benchmark_code"], keep="last")
+        .drop_duplicates(subset, keep="last")
         .reset_index(drop=True)
+    )
+
+
+def read_behaviour_benchmarks(path: Path) -> pd.DataFrame:
+    return _benchmark_frame(
+        read_public_csv(path, "DfE suspensions and exclusions benchmarks"),
+        latest_only=True,
+    )
+
+
+def read_behaviour_benchmark_history(path: Path) -> pd.DataFrame:
+    """Return all published secondary behaviour benchmarks by year."""
+    return _benchmark_frame(
+        read_public_csv(path, "DfE suspensions and exclusions benchmarks"),
+        latest_only=False,
     )

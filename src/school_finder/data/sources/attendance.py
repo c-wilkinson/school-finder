@@ -22,6 +22,15 @@ _EES_DATASET_URL = "https://explore-education-statistics.service.gov.uk/data-cat
 ATTENDANCE_SOURCE_NAME = "DfE pupil absence - school level"
 ATTENDANCE_BENCHMARK_SOURCE_NAME = "DfE pupil absence benchmarks"
 
+ATTENDANCE_METRICS = {
+    "attendance_enrolments": "enrolments",
+    "overall_absence_pct": "sess_overall_percent",
+    "authorised_absence_pct": "sess_authorised_percent",
+    "unauthorised_absence_pct": "sess_unauthorised_percent",
+    "persistent_absence_pct": "enrolments_pa_10_exact_percent",
+    "severe_absence_pct": "enrolments_pa_50_exact_percent",
+}
+
 
 def _source(dataset_id: str, name: str) -> CsvSource:
     return CsvSource(
@@ -57,7 +66,7 @@ def discover_attendance_benchmark_source(session: requests.Session) -> CsvSource
     )
 
 
-def _latest_rows(frame: pd.DataFrame, source_name: str) -> tuple[pd.DataFrame, str]:
+def _time_rows(frame: pd.DataFrame, source_name: str) -> tuple[pd.DataFrame, str]:
     time_col = find_column(frame, "time_period")
     if time_col is None:
         raise SchoolFinderError(f"{source_name} CSV is missing time_period.")
@@ -66,44 +75,69 @@ def _latest_rows(frame: pd.DataFrame, source_name: str) -> tuple[pd.DataFrame, s
     work = work.dropna(subset=["_time_num"])
     if work.empty:
         raise SchoolFinderError(f"{source_name} CSV contained no valid time periods.")
+    return work, time_col
+
+
+def _latest_rows(frame: pd.DataFrame, source_name: str) -> tuple[pd.DataFrame, str]:
+    work, time_col = _time_rows(frame, source_name)
     latest = int(work["_time_num"].max())
     return work[work["_time_num"] == latest].copy(), time_col
 
 
-def read_attendance_school(path: Path) -> pd.DataFrame:
-    frame = read_public_csv(path, "DfE pupil absence school-level")
+def _metric_values(frame: pd.DataFrame) -> dict[str, pd.Series]:
+    result: dict[str, pd.Series] = {}
+    for output, source_name in ATTENDANCE_METRICS.items():
+        col = find_column(frame, source_name)
+        result[output] = (
+            numeric_quality(frame[col])
+            if col is not None
+            else pd.Series(pd.NA, index=frame.index, dtype="object")
+        )
+    return result
+
+
+def _school_frame(frame: pd.DataFrame, *, latest_only: bool) -> pd.DataFrame:
     urn_col = find_column(frame, "school_urn", "urn")
     level_col = find_column(frame, "geographic_level")
     if urn_col is None:
         raise SchoolFinderError("DfE attendance school CSV is missing school_urn.")
     if level_col is not None:
         frame = frame[clean_text_series(frame[level_col]).str.casefold().eq("school")].copy()
-    current, time_col = _latest_rows(frame, "DfE attendance school")
+    rows, time_col = (
+        _latest_rows(frame, "DfE attendance school")
+        if latest_only
+        else _time_rows(frame, "DfE attendance school")
+    )
 
     result = pd.DataFrame(
         {
-            "urn": clean_text_series(current[urn_col]),
-            "attendance_year": clean_text_series(current[time_col]),
+            "urn": clean_text_series(rows[urn_col]),
+            "attendance_year": clean_text_series(rows[time_col]),
+            **_metric_values(rows),
         }
     )
-    metrics = {
-        "attendance_enrolments": "enrolments",
-        "overall_absence_pct": "sess_overall_percent",
-        "authorised_absence_pct": "sess_authorised_percent",
-        "unauthorised_absence_pct": "sess_unauthorised_percent",
-        "persistent_absence_pct": "enrolments_pa_10_exact_percent",
-        "severe_absence_pct": "enrolments_pa_50_exact_percent",
-    }
-    for output, source_name in metrics.items():
-        col = find_column(current, source_name)
-        result[output] = numeric_quality(current[col]) if col else pd.NA
-
     result["attendance_source"] = ATTENDANCE_SOURCE_NAME
     result["attendance_source_dataset_id"] = ATTENDANCE_SCHOOL_DATASET_ID
+    subset = ["urn"] if latest_only else ["urn", "attendance_year"]
     return (
         result[result["urn"].ne("")]
-        .drop_duplicates("urn", keep="last")
+        .drop_duplicates(subset, keep="last")
         .reset_index(drop=True)
+    )
+
+
+def read_attendance_school(path: Path) -> pd.DataFrame:
+    return _school_frame(
+        read_public_csv(path, "DfE pupil absence school-level"),
+        latest_only=True,
+    )
+
+
+def read_attendance_school_history(path: Path) -> pd.DataFrame:
+    """Return all published school-level attendance rows by academic year."""
+    return _school_frame(
+        read_public_csv(path, "DfE pupil absence school-level"),
+        latest_only=False,
     )
 
 
@@ -131,8 +165,7 @@ def _benchmark_identity(frame: pd.DataFrame) -> pd.DataFrame:
     )
 
 
-def read_attendance_benchmarks(path: Path) -> pd.DataFrame:
-    frame = read_public_csv(path, "DfE pupil absence benchmarks")
+def _benchmark_frame(frame: pd.DataFrame, *, latest_only: bool) -> pd.DataFrame:
     level_col = find_column(frame, "geographic_level")
     phase_col = find_column(frame, "education_phase", "school_type")
     if level_col is None or phase_col is None:
@@ -147,25 +180,38 @@ def read_attendance_benchmarks(path: Path) -> pd.DataFrame:
     ].copy()
     if frame.empty:
         raise SchoolFinderError("DfE attendance benchmark CSV contained no secondary benchmark rows.")
-    current, time_col = _latest_rows(frame, "DfE attendance benchmark")
+    rows, time_col = (
+        _latest_rows(frame, "DfE attendance benchmark")
+        if latest_only
+        else _time_rows(frame, "DfE attendance benchmark")
+    )
 
-    result = _benchmark_identity(current)
-    result["attendance_year"] = clean_text_series(current[time_col])
-    metrics = {
-        "attendance_enrolments": "enrolments",
-        "overall_absence_pct": "sess_overall_percent",
-        "authorised_absence_pct": "sess_authorised_percent",
-        "unauthorised_absence_pct": "sess_unauthorised_percent",
-        "persistent_absence_pct": "enrolments_pa_10_exact_percent",
-        "severe_absence_pct": "enrolments_pa_50_exact_percent",
-    }
-    for output, source_name in metrics.items():
-        col = find_column(current, source_name)
-        result[output] = numeric_quality(current[col]) if col else pd.NA
+    result = _benchmark_identity(rows)
+    result["attendance_year"] = clean_text_series(rows[time_col])
+    for output, values in _metric_values(rows).items():
+        result[output] = values
     result["attendance_source"] = ATTENDANCE_BENCHMARK_SOURCE_NAME
     result["attendance_source_dataset_id"] = ATTENDANCE_BENCHMARK_DATASET_ID
+    subset = ["benchmark_level", "benchmark_code"]
+    if not latest_only:
+        subset.append("attendance_year")
     return (
         result[result["benchmark_code"].ne("")]
-        .drop_duplicates(["benchmark_level", "benchmark_code"], keep="last")
+        .drop_duplicates(subset, keep="last")
         .reset_index(drop=True)
+    )
+
+
+def read_attendance_benchmarks(path: Path) -> pd.DataFrame:
+    return _benchmark_frame(
+        read_public_csv(path, "DfE pupil absence benchmarks"),
+        latest_only=True,
+    )
+
+
+def read_attendance_benchmark_history(path: Path) -> pd.DataFrame:
+    """Return all published secondary attendance benchmarks by year."""
+    return _benchmark_frame(
+        read_public_csv(path, "DfE pupil absence benchmarks"),
+        latest_only=False,
     )

@@ -498,3 +498,25 @@ def test_run_lookup_table_includes_pastoral_context(monkeypatch, capsys):
     assert "pastoral_score" in out
     assert "82.5" in out
     assert "pastoral_response_count" in out
+
+
+def test_run_build_prints_history_files_when_updated(monkeypatch, capsys, tmp_path):
+    monkeypatch.setattr(
+        cli,
+        "build_datasets",
+        lambda *a, **k: BuildResult(
+            False,
+            False,
+            True,
+            {},
+            history_updated=True,
+            benchmark_history_updated=True,
+        ),
+    )
+    args = argparse.Namespace(data_dir=tmp_path, force=False, onspd_item_id=None, json=False)
+
+    assert cli._run_build(args) == 0
+
+    out = capsys.readouterr().out
+    assert "history.parquet" in out
+    assert "benchmark_history.parquet" in out

@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from datetime import date
+import re
 from typing import Callable
+
+import pandas as pd
 
 from school_finder.models.school import SchoolBenchmarks, SchoolResult, SubjectResult
 from school_finder.models.search import SchoolSearchResult
@@ -347,3 +350,254 @@ def subject_rows(subjects: Iterable[SubjectResult]) -> list[dict[str, str]]:
             }
         )
     return rows
+
+
+TREND_METRIC_LABELS: dict[str, dict[str, str]] = {
+    "academics": {
+        "pupil_count": "Pupil count",
+        "attainment8": "Attainment 8",
+        "attainment8_english": "Attainment 8 – English",
+        "attainment8_maths": "Attainment 8 – Maths",
+        "attainment8_ebacc": "Attainment 8 – EBacc",
+        "attainment8_open": "Attainment 8 – Open",
+        "progress8_pupil_count": "Progress 8 pupil count",
+        "progress8": "Progress 8",
+        "progress8_english": "Progress 8 – English",
+        "progress8_maths": "Progress 8 – Maths",
+        "progress8_ebacc": "Progress 8 – EBacc",
+        "progress8_open": "Progress 8 – Open",
+        "english_maths_grade5_pct": "English & Maths Grade 5+",
+        "english_maths_grade4_pct": "English & Maths Grade 4+",
+        "ebacc_entry_pct": "EBacc entry",
+        "ebacc_grade5_pct": "EBacc Grade 5+",
+        "ebacc_grade4_pct": "EBacc Grade 4+",
+        "ebacc_aps": "EBacc APS",
+        "triple_science_entry_pct": "Triple science entry",
+        "multiple_languages_entry_pct": "Multiple languages entry",
+        "gcse_entries_per_pupil": "GCSE entries per pupil",
+        "qualification_entries_per_pupil": "Qualification entries per pupil",
+    },
+    "attendance": {
+        "attendance_enrolments": "Enrolments",
+        "overall_absence_pct": "Overall absence",
+        "authorised_absence_pct": "Authorised absence",
+        "unauthorised_absence_pct": "Unauthorised absence",
+        "persistent_absence_pct": "Persistent absence",
+        "severe_absence_pct": "Severe absence",
+    },
+    "behaviour": {
+        "behaviour_pupil_headcount": "Pupil headcount",
+        "suspension_count": "Suspensions",
+        "suspension_rate": "Suspension rate",
+        "pupils_with_one_or_more_suspension": "Pupils with one or more suspensions",
+        "pupils_with_one_or_more_suspension_rate": "Pupils with one or more suspensions rate",
+        "permanent_exclusion_count": "Permanent exclusions",
+        "permanent_exclusion_rate": "Permanent exclusion rate",
+    },
+    "workforce": {
+        "pupil_fte": "Pupils (FTE)",
+        "teacher_fte": "Teachers (FTE)",
+        "qualified_teacher_fte": "Qualified teachers (FTE)",
+        "classroom_teacher_fte": "Classroom teachers (FTE)",
+        "teaching_assistant_fte": "Teaching assistants (FTE)",
+        "support_staff_fte": "Support staff (FTE)",
+        "teachers_without_qts_fte": "Teachers without QTS (FTE)",
+        "part_time_teacher_pct": "Part-time teachers",
+        "pupil_qualified_teacher_ratio": "Pupils per qualified teacher",
+        "pupil_teacher_ratio": "Pupils per teacher",
+        "pupil_adult_ratio": "Pupils per adult",
+    },
+    "destinations": {
+        "destination_pupil_count": "Destination cohort",
+        "sustained_destination_pct": "Sustained destination",
+        "education_destination_pct": "Education destination",
+        "apprenticeship_destination_pct": "Apprenticeship destination",
+        "employment_destination_pct": "Employment destination",
+        "not_sustained_destination_pct": "Not sustained",
+        "unknown_destination_pct": "Unknown destination",
+    },
+}
+
+DEFAULT_TREND_METRIC = {
+    "academics": "attainment8",
+    "attendance": "overall_absence_pct",
+    "behaviour": "suspension_rate",
+    "workforce": "pupil_teacher_ratio",
+    "destinations": "sustained_destination_pct",
+}
+
+# Aggregate counts/FTE totals are not comparable with a single school. Rates,
+# ratios and attainment measures are suitable for LA/England overlays.
+BENCHMARK_TREND_METRICS = {
+    "attainment8",
+    "attainment8_english",
+    "attainment8_maths",
+    "attainment8_ebacc",
+    "attainment8_open",
+    "progress8",
+    "progress8_english",
+    "progress8_maths",
+    "progress8_ebacc",
+    "progress8_open",
+    "english_maths_grade5_pct",
+    "english_maths_grade4_pct",
+    "ebacc_entry_pct",
+    "ebacc_grade5_pct",
+    "ebacc_grade4_pct",
+    "ebacc_aps",
+    "triple_science_entry_pct",
+    "multiple_languages_entry_pct",
+    "gcse_entries_per_pupil",
+    "qualification_entries_per_pupil",
+    "overall_absence_pct",
+    "authorised_absence_pct",
+    "unauthorised_absence_pct",
+    "persistent_absence_pct",
+    "severe_absence_pct",
+    "suspension_rate",
+    "pupils_with_one_or_more_suspension_rate",
+    "permanent_exclusion_rate",
+    "part_time_teacher_pct",
+    "pupil_qualified_teacher_ratio",
+    "pupil_teacher_ratio",
+    "pupil_adult_ratio",
+    "sustained_destination_pct",
+    "education_destination_pct",
+    "apprenticeship_destination_pct",
+    "employment_destination_pct",
+    "not_sustained_destination_pct",
+    "unknown_destination_pct",
+}
+
+
+def history_year_key(value: object) -> int | None:
+    """Return a sortable key for compact/slash academic years or calendar years."""
+    text = str(value or "").strip()
+    compact = re.fullmatch(r"(\d{4})(\d{2})", text)
+    if compact:
+        return int(f"{compact.group(1)}{compact.group(2)}")
+    slash = re.fullmatch(r"(\d{4})/(\d{2})", text)
+    if slash:
+        return int(f"{slash.group(1)}{slash.group(2)}")
+    calendar = re.fullmatch(r"\d{4}", text)
+    if calendar:
+        return int(text)
+    return None
+
+
+def format_history_year(value: object) -> str:
+    """Render DfE compact academic years as 2024/25 while preserving other labels."""
+    text = str(value or "").strip()
+    compact = re.fullmatch(r"(\d{4})(\d{2})", text)
+    if compact:
+        return f"{compact.group(1)}/{compact.group(2)}"
+    return text
+
+
+def available_trend_metrics(history: pd.DataFrame, domain: str) -> tuple[str, ...]:
+    """Return known metrics with at least two school observations in the domain."""
+    labels = TREND_METRIC_LABELS.get(domain, {})
+    if history.empty or not labels:
+        return ()
+    school = history[
+        history["domain"].eq(domain) & history["series"].eq("School")
+    ].copy()
+    if school.empty:
+        return ()
+    available: list[str] = []
+    for metric in labels:
+        rows = school[school["metric"].eq(metric)]
+        keys = {history_year_key(value) for value in rows["year"]}
+        keys.discard(None)
+        if len(keys) >= 2:
+            available.append(metric)
+    return tuple(available)
+
+
+def trend_frame(
+    history: pd.DataFrame,
+    domain: str,
+    metric: str,
+    *,
+    years: int | None = None,
+) -> pd.DataFrame:
+    """Return a chronological wide frame suitable for Streamlit line charts.
+
+    The x-axis is based on every published school year in the domain rather than
+    only years where the selected metric has a value. This preserves genuine
+    publication gaps (for example Progress 8) instead of visually joining two
+    non-adjacent observations as though the missing year had data.
+    """
+    if history.empty:
+        return pd.DataFrame()
+
+    domain_school = history[
+        history["domain"].eq(domain) & history["series"].eq("School")
+    ].copy()
+    if domain_school.empty:
+        return pd.DataFrame()
+    domain_school["_year_key"] = domain_school["year"].map(history_year_key)
+    domain_school = domain_school[domain_school["_year_key"].notna()].copy()
+    if domain_school.empty:
+        return pd.DataFrame()
+
+    school_keys = sorted(domain_school["_year_key"].astype(int).unique())
+    if years is not None and years > 0:
+        school_keys = school_keys[-years:]
+
+    work = history[
+        history["domain"].eq(domain) & history["metric"].eq(metric)
+    ].copy()
+    if work.empty:
+        return pd.DataFrame()
+    if metric not in BENCHMARK_TREND_METRICS:
+        work = work[work["series"].eq("School")].copy()
+
+    work["_year_key"] = work["year"].map(history_year_key)
+    work = work[work["_year_key"].notna() & work["_year_key"].isin(school_keys)].copy()
+    if work.empty:
+        return pd.DataFrame()
+
+    labels_by_key: dict[int, str] = {}
+    for key in school_keys:
+        school_year = domain_school.loc[
+            domain_school["_year_key"].eq(key), "year"
+        ]
+        value = school_year.iloc[-1] if not school_year.empty else str(key)
+        labels_by_key[int(key)] = format_history_year(value)
+
+    pivot = work.pivot_table(
+        index="_year_key",
+        columns="series",
+        values="value",
+        aggfunc="last",
+    ).reindex(school_keys)
+    series_order = [name for name in ("School",) if name in pivot.columns]
+    series_order.extend(sorted(name for name in pivot.columns if name != "School"))
+    pivot = pivot[series_order].reset_index()
+    pivot.insert(0, "Year", pivot["_year_key"].map(labels_by_key))
+    return pivot.drop(columns="_year_key")
+
+
+def trend_lineage_note(history: pd.DataFrame, domain: str, metric: str) -> str | None:
+    """Explain when a trend includes values inherited from predecessor schools."""
+    if history.empty:
+        return None
+    rows = history[
+        history["domain"].eq(domain)
+        & history["metric"].eq(metric)
+        & history["series"].eq("School")
+        & history["source_kind"].eq("predecessor")
+    ]
+    names = sorted(
+        {
+            str(value).strip()
+            for value in rows["source_school_name"].dropna()
+            if str(value).strip()
+        }
+    )
+    if not names:
+        return None
+    if len(names) == 1:
+        return f"Includes historical data from predecessor school: {names[0]}."
+    return "Includes historical data from predecessor schools: " + ", ".join(names) + "."

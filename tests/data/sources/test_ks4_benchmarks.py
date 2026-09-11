@@ -226,3 +226,32 @@ def test_read_benchmarks_discards_blank_codes_and_orders_national_first(tmp_path
     ]).to_csv(path, index=False)
     result = ks4_benchmarks.read_ks4_benchmarks(path)
     assert result["benchmark_name"].tolist() == ["England", "Hampshire"]
+
+
+def test_read_ks4_benchmark_history_returns_all_geography_years(tmp_path: Path):
+    path = tmp_path / "ks4-benchmark-history.csv"
+    pd.DataFrame([
+        _row(time_period="202324", attainment8_average="45.0"),
+        _row(time_period="202425", attainment8_average="46.1"),
+        _row(
+            time_period="202324",
+            geographic_level="Local authority",
+            new_la_code="E10000014",
+            la_name="Hampshire",
+            attainment8_average="45.5",
+        ),
+        _row(
+            time_period="202425",
+            geographic_level="Local authority",
+            new_la_code="E10000014",
+            la_name="Hampshire",
+            attainment8_average="46.8",
+        ),
+    ]).to_csv(path, index=False)
+
+    result = ks4_benchmarks.read_ks4_benchmark_history(path)
+
+    england = result[result["benchmark_code"].eq("E92000001")]
+    hampshire = result[result["benchmark_code"].eq("E10000014")]
+    assert england["performance_year"].tolist() == ["202324", "202425"]
+    assert hampshire["performance_year"].tolist() == ["202324", "202425"]

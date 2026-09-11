@@ -1,6 +1,8 @@
 from datetime import date
 import math
 
+import pandas as pd
+
 from school_finder.models.school import (
     AcademicPerformance,
     AttendanceStatistics,
@@ -18,18 +20,23 @@ from school_finder.models.school import (
 from school_finder.models.search import PostcodeLocation, SchoolSearchRequest, SchoolSearchResult
 from school_finder.ui.detail import (
     academic_rows,
+    available_trend_metrics,
     attendance_rows,
     behaviour_rows,
     destination_rows,
     find_school,
     format_date,
     format_integer,
+    format_history_year,
+    history_year_key,
     inspection_rows,
     overview_rows,
     pastoral_rows,
     relevant_benchmarks,
     school_address,
     subject_rows,
+    trend_frame,
+    trend_lineage_note,
     workforce_ratio_rows,
     workforce_rows,
 )
@@ -273,3 +280,141 @@ def test_relevant_benchmarks_falls_back_to_national_when_local_code_has_no_match
     england = _benchmark("England", "National", "E92000001")
     other = _benchmark("Other", "Local authority", "E99999999")
     assert relevant_benchmarks(school, (other, england)) == (england,)
+
+
+def _history_rows():
+    rows = []
+    for year, school, hampshire, england in (
+        ("202223", 48.0, 47.0, 46.0),
+        ("202324", 50.0, 48.0, 47.0),
+        ("202425", 52.0, 49.0, 48.0),
+    ):
+        rows.extend(
+            [
+                {"domain": "academics", "year": year, "metric": "attainment8", "series": "School", "value": school, "source_urn": "100001", "source_school_name": "Example School", "source_kind": "current", "source_link_depth": 0},
+                {"domain": "academics", "year": year, "metric": "attainment8", "series": "Hampshire", "value": hampshire, "source_urn": None, "source_school_name": None, "source_kind": None, "source_link_depth": None},
+                {"domain": "academics", "year": year, "metric": "attainment8", "series": "England", "value": england, "source_urn": None, "source_school_name": None, "source_kind": None, "source_link_depth": None},
+            ]
+        )
+    rows.extend(
+        [
+            {"domain": "academics", "year": "202324", "metric": "pupil_count", "series": "School", "value": 170, "source_urn": "999999", "source_school_name": "Old School", "source_kind": "predecessor", "source_link_depth": 1},
+            {"domain": "academics", "year": "202425", "metric": "pupil_count", "series": "School", "value": 180, "source_urn": "100001", "source_school_name": "Example School", "source_kind": "current", "source_link_depth": 0},
+            {"domain": "academics", "year": "202425", "metric": "pupil_count", "series": "England", "value": 200, "source_urn": None, "source_school_name": None, "source_kind": None, "source_link_depth": None},
+            {"domain": "attendance", "year": "202425", "metric": "overall_absence_pct", "series": "School", "value": 6.0, "source_urn": "100001", "source_school_name": "Example School", "source_kind": "current", "source_link_depth": 0},
+        ]
+    )
+    return pd.DataFrame(rows)
+
+
+def test_history_year_helpers_support_dfe_formats():
+    assert history_year_key("202425") == 202425
+    assert history_year_key("2024/25") == 202425
+    assert history_year_key("2024") == 2024
+    assert history_year_key("bad") is None
+    assert history_year_key(None) is None
+    assert format_history_year("202425") == "2024/25"
+    assert format_history_year("2024/25") == "2024/25"
+
+
+def test_trend_metrics_require_two_school_years_and_frame_is_chronological():
+    history = _history_rows()
+    metrics = available_trend_metrics(history, "academics")
+    assert "attainment8" in metrics
+    assert "pupil_count" in metrics
+    assert available_trend_metrics(history, "attendance") == ()
+    assert available_trend_metrics(pd.DataFrame(), "academics") == ()
+    assert available_trend_metrics(history, "unknown") == ()
+
+    frame = trend_frame(history, "academics", "attainment8", years=2)
+    assert frame["Year"].tolist() == ["2023/24", "2024/25"]
+    assert list(frame.columns) == ["Year", "School", "England", "Hampshire"]
+    assert frame["School"].tolist() == [50.0, 52.0]
+
+
+def test_trend_frame_hides_invalid_benchmarks_for_school_only_metrics_and_handles_empty():
+    history = _history_rows()
+    frame = trend_frame(history, "academics", "pupil_count")
+    assert list(frame.columns) == ["Year", "School"]
+    assert frame["Year"].tolist() == ["2022/23", "2023/24", "2024/25"]
+    assert pd.isna(frame.loc[0, "School"])
+
+    assert trend_frame(pd.DataFrame(), "academics", "attainment8").empty
+    assert trend_frame(history, "academics", "missing").empty
+
+    bad = history.copy()
+    bad.loc[bad["metric"].eq("attainment8"), "year"] = "unknown"
+    assert trend_frame(bad, "academics", "attainment8").empty
+
+    benchmarks_only = history[~history["series"].eq("School")]
+    assert trend_frame(benchmarks_only, "academics", "attainment8").empty
+
+
+
+def test_trend_frame_preserves_missing_metric_years_as_gaps():
+    history = _history_rows()
+    extra_domain_year = pd.DataFrame(
+        [
+            {"domain": "academics", "year": "202526", "metric": "pupil_count", "series": "School", "value": 190, "source_urn": "100001", "source_school_name": "Example School", "source_kind": "current", "source_link_depth": 0}
+        ]
+    )
+    history = pd.concat([history, extra_domain_year], ignore_index=True)
+
+    frame = trend_frame(history, "academics", "attainment8")
+
+    assert frame["Year"].tolist() == ["2022/23", "2023/24", "2024/25", "2025/26"]
+    assert pd.isna(frame.loc[3, "School"])
+
+def test_trend_lineage_note_names_predecessor_schools():
+    history = _history_rows()
+    assert trend_lineage_note(history, "academics", "pupil_count") == (
+        "Includes historical data from predecessor school: Old School."
+    )
+    assert trend_lineage_note(history, "academics", "attainment8") is None
+    assert trend_lineage_note(pd.DataFrame(), "academics", "attainment8") is None
+
+    extra = pd.concat(
+        [
+            history,
+            pd.DataFrame(
+                [
+                    {"domain": "academics", "year": "202223", "metric": "pupil_count", "series": "School", "value": 160, "source_urn": "888888", "source_school_name": "Older School", "source_kind": "predecessor", "source_link_depth": 2}
+                ]
+            ),
+        ],
+        ignore_index=True,
+    )
+    assert trend_lineage_note(extra, "academics", "pupil_count") == (
+        "Includes historical data from predecessor schools: Old School, Older School."
+    )
+
+
+def test_trend_frame_returns_empty_when_domain_has_no_valid_school_years():
+    history = pd.DataFrame(
+        [
+            {
+                "domain": "academics",
+                "year": "unknown",
+                "metric": "attainment8",
+                "series": "School",
+                "value": 50.0,
+                "source_urn": "1",
+                "source_school_name": "School",
+                "source_kind": "current",
+                "source_link_depth": 0,
+            },
+            {
+                "domain": "academics",
+                "year": "also-bad",
+                "metric": "pupil_count",
+                "series": "School",
+                "value": 100,
+                "source_urn": "1",
+                "source_school_name": "School",
+                "source_kind": "current",
+                "source_link_depth": 0,
+            },
+        ]
+    )
+
+    assert trend_frame(history, "academics", "attainment8").empty

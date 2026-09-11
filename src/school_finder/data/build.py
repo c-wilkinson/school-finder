@@ -12,9 +12,11 @@ import pandas as pd
 
 from school_finder.config import (
     BENCHMARKS_FILENAME,
+    BENCHMARK_HISTORY_FILENAME,
     MANIFEST_FILENAME,
     MANIFEST_SCHEMA_VERSION,
     POSTCODES_FILENAME,
+    HISTORY_FILENAME,
     SCHOOLS_FILENAME,
     SUBJECTS_FILENAME,
 )
@@ -29,25 +31,40 @@ from school_finder.data.manifest import (
     write_json_atomic,
 )
 from school_finder.data.parquet import parquet_metadata, require_pyarrow, write_parquet_file
+from school_finder.data.history import (
+    combine_benchmark_history,
+    normalise_benchmark_history,
+    normalise_school_history,
+    resolve_school_history_lineage,
+)
 from school_finder.data.sources.common import create_session, download_csv
 from school_finder.data.sources.attendance import (
+    ATTENDANCE_METRICS,
     discover_attendance_benchmark_source,
     discover_attendance_school_source,
+    read_attendance_benchmark_history,
     read_attendance_benchmarks,
     read_attendance_school,
+    read_attendance_school_history,
 )
 from school_finder.data.sources.behaviour import (
+    BEHAVIOUR_METRICS,
     discover_behaviour_benchmark_source,
     discover_behaviour_school_source,
+    read_behaviour_benchmark_history,
     read_behaviour_benchmarks,
     read_behaviour_school,
+    read_behaviour_school_history,
 )
 from school_finder.data.sources.destinations import (
+    DESTINATION_METRICS,
     discover_destination_la_source,
     discover_destination_national_source,
     discover_destination_school_source,
+    read_destination_benchmark_history,
     read_destination_benchmarks,
     read_destination_school,
+    read_destination_school_history,
 )
 from school_finder.data.sources.gias import (
     clean_gias_data,
@@ -59,22 +76,33 @@ from school_finder.data.sources.gias import (
     read_gias_csv,
     read_gias_links_csv,
 )
-from school_finder.data.sources.ks4 import discover_ks4_source, read_ks4_quality
+from school_finder.data.sources.ks4 import (
+    CURRENT_METRICS,
+    PROGRESS_METRICS,
+    discover_ks4_source,
+    read_ks4_history,
+    read_ks4_quality,
+)
 from school_finder.data.sources.ks4_subjects import (
     discover_ks4_subject_source,
     read_ks4_subjects,
 )
 from school_finder.data.sources.ks4_benchmarks import (
     discover_ks4_benchmark_source,
+    read_ks4_benchmark_history,
     read_ks4_benchmarks,
 )
 from school_finder.data.sources.workforce import (
+    WORKFORCE_RATIO_METRICS,
+    WORKFORCE_STAFF_METRICS,
     discover_workforce_benchmark_source,
     discover_workforce_ratio_benchmark_source,
     discover_workforce_ratio_school_source,
     discover_workforce_school_source,
+    read_workforce_benchmark_history,
     read_workforce_benchmarks,
     read_workforce_school,
+    read_workforce_school_history,
 )
 from school_finder.data.sources.parent_view import (
     discover_parent_view_source,
@@ -102,6 +130,8 @@ class BuildResult:
     manifest: dict[str, Any]
     benchmarks_updated: bool = False
     subjects_updated: bool = False
+    history_updated: bool = False
+    benchmark_history_updated: bool = False
 
 
 def combine_ofsted_quality(*frames: pd.DataFrame) -> pd.DataFrame:
@@ -257,6 +287,101 @@ DESTINATION_COLUMNS = (
     "destination_source",
     "destination_source_dataset_id",
 )
+
+
+def build_school_history(
+    schools: pd.DataFrame,
+    links: pd.DataFrame,
+    *,
+    ks4_path: Path,
+    attendance_path: Path,
+    behaviour_path: Path,
+    workforce_path: Path,
+    workforce_ratio_path: Path,
+    destination_path: Path,
+) -> pd.DataFrame:
+    """Build lineage-aware historical metrics for current schools."""
+    frames = [
+        normalise_school_history(
+            read_ks4_history(ks4_path),
+            domain="academics",
+            year_column="performance_year",
+            metric_columns=(*CURRENT_METRICS, *PROGRESS_METRICS),
+        ),
+        normalise_school_history(
+            read_attendance_school_history(attendance_path),
+            domain="attendance",
+            year_column="attendance_year",
+            metric_columns=ATTENDANCE_METRICS,
+        ),
+        normalise_school_history(
+            read_behaviour_school_history(behaviour_path),
+            domain="behaviour",
+            year_column="behaviour_year",
+            metric_columns=BEHAVIOUR_METRICS,
+        ),
+        normalise_school_history(
+            read_workforce_school_history(workforce_path, workforce_ratio_path),
+            domain="workforce",
+            year_column="history_year",
+            metric_columns=(*WORKFORCE_STAFF_METRICS, *WORKFORCE_RATIO_METRICS),
+        ),
+        normalise_school_history(
+            read_destination_school_history(destination_path),
+            domain="destinations",
+            year_column="destination_leaver_year",
+            metric_columns=DESTINATION_METRICS,
+        ),
+    ]
+    raw = pd.concat(frames, ignore_index=True)
+    return resolve_school_history_lineage(schools, links, raw)
+
+
+def build_benchmark_history(
+    *,
+    ks4_path: Path,
+    attendance_path: Path,
+    behaviour_path: Path,
+    workforce_path: Path,
+    workforce_ratio_path: Path,
+    destination_national_path: Path,
+    destination_la_path: Path,
+) -> pd.DataFrame:
+    """Build national/local-authority metric history for detail trends."""
+    return combine_benchmark_history(
+        normalise_benchmark_history(
+            read_ks4_benchmark_history(ks4_path),
+            domain="academics",
+            year_column="performance_year",
+            metric_columns=(*CURRENT_METRICS, *PROGRESS_METRICS),
+        ),
+        normalise_benchmark_history(
+            read_attendance_benchmark_history(attendance_path),
+            domain="attendance",
+            year_column="attendance_year",
+            metric_columns=ATTENDANCE_METRICS,
+        ),
+        normalise_benchmark_history(
+            read_behaviour_benchmark_history(behaviour_path),
+            domain="behaviour",
+            year_column="behaviour_year",
+            metric_columns=BEHAVIOUR_METRICS,
+        ),
+        normalise_benchmark_history(
+            read_workforce_benchmark_history(workforce_path, workforce_ratio_path),
+            domain="workforce",
+            year_column="history_year",
+            metric_columns=(*WORKFORCE_STAFF_METRICS, *WORKFORCE_RATIO_METRICS),
+        ),
+        normalise_benchmark_history(
+            read_destination_benchmark_history(
+                destination_national_path, destination_la_path
+            ),
+            domain="destinations",
+            year_column="destination_leaver_year",
+            metric_columns=DESTINATION_METRICS,
+        ),
+    )
 
 
 def _lineage_graph(
@@ -698,6 +823,8 @@ def build_datasets(
     postcodes_path = data_dir / POSTCODES_FILENAME
     benchmarks_path = data_dir / BENCHMARKS_FILENAME
     subjects_path = data_dir / SUBJECTS_FILENAME
+    history_path = data_dir / HISTORY_FILENAME
+    benchmark_history_path = data_dir / BENCHMARK_HISTORY_FILENAME
     existing_manifest = read_manifest(manifest_path)
 
     session = create_session()
@@ -756,6 +883,7 @@ def build_datasets(
     schools_current = (
         not force
         and schools_path.exists()
+        and history_path.exists()
         and existing_manifest is not None
         and existing_manifest.get("schema_version") == MANIFEST_SCHEMA_VERSION
         and source_matches(existing_manifest, "gias", gias_source_manifest, ("source_date", "download_url"))
@@ -798,6 +926,7 @@ def build_datasets(
     benchmarks_current = (
         not force
         and benchmarks_path.exists()
+        and benchmark_history_path.exists()
         and existing_manifest is not None
         and existing_manifest.get("schema_version") == MANIFEST_SCHEMA_VERSION
         and source_matches(existing_manifest, "ks4_benchmarks", ks4_benchmark_source_manifest, ("release_label", "download_url"))
@@ -828,6 +957,8 @@ def build_datasets(
         staged_postcodes: Path | None = None
         staged_benchmarks: Path | None = None
         staged_subjects: Path | None = None
+        staged_history: Path | None = None
+        staged_benchmark_history: Path | None = None
 
         if schools_current:
             log(f"GIAS source unchanged; keeping {schools_path}.")
@@ -893,9 +1024,28 @@ def build_datasets(
                     f"GIAS produced only {len(schools):,} open establishments; "
                     "refusing to publish a probably incomplete dataset."
                 )
+            log("Building school metric history across published years...")
+            history = build_school_history(
+                schools,
+                gias_links,
+                ks4_path=ks4_csv,
+                attendance_path=attendance_csv,
+                behaviour_path=behaviour_csv,
+                workforce_path=workforce_csv,
+                workforce_ratio_path=workforce_ratio_csv,
+                destination_path=destination_csv,
+            )
+            if history.empty:
+                raise SchoolFinderError(
+                    "DfE historical school data produced no usable metric rows."
+                )
+
             staged_schools = temp_dir / SCHOOLS_FILENAME
             log(f"Staging {SCHOOLS_FILENAME} ({len(schools):,} rows)...")
             write_parquet_file(schools, staged_schools)
+            staged_history = temp_dir / HISTORY_FILENAME
+            log(f"Staging {HISTORY_FILENAME} ({len(history):,} rows)...")
+            write_parquet_file(history, staged_history)
 
         if subjects_current:
             log(f"DfE subject source unchanged; keeping {subjects_path}.")
@@ -956,9 +1106,30 @@ def build_datasets(
                 raise SchoolFinderError(
                     "DfE benchmark data produced no usable benchmark rows."
                 )
+            log("Building benchmark metric history across published years...")
+            benchmark_history = build_benchmark_history(
+                ks4_path=benchmark_csv,
+                attendance_path=attendance_benchmark_csv,
+                behaviour_path=behaviour_benchmark_csv,
+                workforce_path=workforce_benchmark_csv,
+                workforce_ratio_path=workforce_ratio_benchmark_csv,
+                destination_national_path=destination_national_csv,
+                destination_la_path=destination_la_csv,
+            )
+            if benchmark_history.empty:
+                raise SchoolFinderError(
+                    "DfE historical benchmark data produced no usable metric rows."
+                )
+
             staged_benchmarks = temp_dir / BENCHMARKS_FILENAME
             log(f"Staging {BENCHMARKS_FILENAME} ({len(benchmarks):,} rows)...")
             write_parquet_file(benchmarks, staged_benchmarks)
+            staged_benchmark_history = temp_dir / BENCHMARK_HISTORY_FILENAME
+            log(
+                f"Staging {BENCHMARK_HISTORY_FILENAME} "
+                f"({len(benchmark_history):,} rows)..."
+            )
+            write_parquet_file(benchmark_history, staged_benchmark_history)
 
         if staged_schools is not None:
             os.replace(staged_schools, schools_path)
@@ -968,6 +1139,10 @@ def build_datasets(
             os.replace(staged_benchmarks, benchmarks_path)
         if staged_subjects is not None:
             os.replace(staged_subjects, subjects_path)
+        if staged_history is not None:
+            os.replace(staged_history, history_path)
+        if staged_benchmark_history is not None:
+            os.replace(staged_benchmark_history, benchmark_history_path)
 
     manifest = {
         "schema_version": MANIFEST_SCHEMA_VERSION,
@@ -982,6 +1157,8 @@ def build_datasets(
             POSTCODES_FILENAME: parquet_metadata(postcodes_path),
             BENCHMARKS_FILENAME: parquet_metadata(benchmarks_path),
             SUBJECTS_FILENAME: parquet_metadata(subjects_path),
+            HISTORY_FILENAME: parquet_metadata(history_path),
+            BENCHMARK_HISTORY_FILENAME: parquet_metadata(benchmark_history_path),
         },
         "sources": {
             "gias": gias_source_manifest,
@@ -1017,4 +1194,6 @@ def build_datasets(
         manifest=manifest,
         benchmarks_updated=not benchmarks_current,
         subjects_updated=not subjects_current,
+        history_updated=not schools_current,
+        benchmark_history_updated=not benchmarks_current,
     )

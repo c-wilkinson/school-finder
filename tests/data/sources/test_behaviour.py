@@ -152,3 +152,41 @@ def test_behaviour_benchmark_validation(tmp_path: Path):
     pd.DataFrame([row]).to_csv(bad_identity, index=False)
     with pytest.raises(SchoolFinderError, match="geography identity columns"):
         behaviour.read_behaviour_benchmarks(bad_identity)
+
+
+def test_behaviour_history_keeps_multiple_published_years(tmp_path: Path):
+    school_path = tmp_path / "behaviour-history.csv"
+    pd.DataFrame([
+        _school_row(time_period="202324", susp_rate="14.0"),
+        _school_row(time_period="202425", susp_rate="12.0"),
+    ]).to_csv(school_path, index=False)
+
+    school = behaviour.read_behaviour_school_history(school_path)
+    assert school["behaviour_year"].tolist() == ["202324", "202425"]
+    assert school["suspension_rate"].tolist() == [14.0, 12.0]
+
+    benchmark_path = tmp_path / "behaviour-benchmark-history.csv"
+    pd.DataFrame([
+        _benchmark_row(time_period="202324", susp_rate="21.0"),
+        _benchmark_row(time_period="202425", susp_rate="20.0"),
+        _benchmark_row(
+            time_period="202324",
+            geographic_level="Local authority",
+            new_la_code="E10000014",
+            la_name="Hampshire",
+            susp_rate="19.0",
+        ),
+        _benchmark_row(
+            time_period="202425",
+            geographic_level="Local authority",
+            new_la_code="E10000014",
+            la_name="Hampshire",
+            susp_rate="18.0",
+        ),
+    ]).to_csv(benchmark_path, index=False)
+
+    benchmarks = behaviour.read_behaviour_benchmark_history(benchmark_path)
+    england = benchmarks[benchmarks["benchmark_code"].eq("E92000001")]
+    hampshire = benchmarks[benchmarks["benchmark_code"].eq("E10000014")]
+    assert england["behaviour_year"].tolist() == ["202324", "202425"]
+    assert hampshire["behaviour_year"].tolist() == ["202324", "202425"]

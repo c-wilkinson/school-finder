@@ -25,6 +25,7 @@ from school_finder.models.filters import (
 from school_finder.models.preferences import PreferenceMetric, PreferencePreset
 from school_finder.models.school import SchoolResult
 from school_finder.models.search import SchoolSearchResult
+from school_finder.services.history import get_school_history
 from school_finder.services.search import search_schools
 from school_finder.services.subjects import get_school_subject_results
 from school_finder.ui.controls import (
@@ -34,6 +35,9 @@ from school_finder.ui.controls import (
     build_search_request,
 )
 from school_finder.ui.detail import (
+    DEFAULT_TREND_METRIC,
+    TREND_METRIC_LABELS,
+    available_trend_metrics,
     academic_rows,
     attendance_rows,
     behaviour_rows,
@@ -44,6 +48,8 @@ from school_finder.ui.detail import (
     pastoral_rows,
     relevant_benchmarks,
     subject_rows,
+    trend_frame,
+    trend_lineage_note,
     workforce_ratio_rows,
     workforce_rows,
 )
@@ -94,12 +100,18 @@ def _cached_subjects_impl(data_dir: str, urn: str):
     return get_school_subject_results(Path(data_dir), urn)
 
 
+def _cached_history_impl(data_dir: str, urn: str, local_authority_code: str | None):
+    return get_school_history(Path(data_dir), urn, local_authority_code)
+
+
 if st is not None:
     _cached_search = st.cache_data(ttl=900, show_spinner=False)(_cached_search_impl)
     _cached_subjects = st.cache_data(ttl=900, show_spinner=False)(_cached_subjects_impl)
+    _cached_history = st.cache_data(ttl=900, show_spinner=False)(_cached_history_impl)
 else:
     _cached_search = _cached_search_impl
     _cached_subjects = _cached_subjects_impl
+    _cached_history = _cached_history_impl
 
 
 def _optional_number(label: str, **kwargs) -> float | None:
@@ -369,6 +381,68 @@ def _render_detail_table(rows: list[dict[str, str]], empty_message: str) -> None
     st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
 
 
+def _render_trends(
+    history: pd.DataFrame | None,
+    domain: str,
+    *,
+    heading: str = "Trends",
+    error: str | None = None,
+) -> None:
+    st.markdown(f"#### {heading}")
+    if error:
+        st.caption(f"Trend data unavailable: {error}")
+        return
+    if history is None or history.empty:
+        st.caption("No historical data is currently available for this area.")
+        return
+
+    metrics = available_trend_metrics(history, domain)
+    if not metrics:
+        st.caption("There are not yet two comparable published years for this area.")
+        return
+
+    default_metric = DEFAULT_TREND_METRIC.get(domain)
+    index = metrics.index(default_metric) if default_metric in metrics else 0
+    metric = st.selectbox(
+        "Metric",
+        metrics,
+        index=index,
+        format_func=lambda value: TREND_METRIC_LABELS[domain][value],
+        key=f"trend-metric-{domain}",
+    )
+
+    all_years = trend_frame(history, domain, metric)
+    year_count = len(all_years)
+    period_options: list[int | None] = [
+        years for years in (3, 5, 10) if year_count > years
+    ]
+    period_options.append(None)
+    period = None
+    if len(period_options) > 1:
+        period = st.selectbox(
+            "Period",
+            period_options,
+            index=0,
+            format_func=lambda value: (
+                "All available" if value is None else f"Last {value} years"
+            ),
+            key=f"trend-period-{domain}",
+        )
+
+    chart = trend_frame(history, domain, metric, years=period)
+    if chart.empty or len(chart) < 2:
+        st.caption("There are not yet two comparable published years for this metric.")
+        return
+
+    series = [column for column in chart.columns if column != "Year"]
+    st.line_chart(chart, x="Year", y=series, width="stretch")
+    if len(series) > 1:
+        st.caption("School, local-authority and England trends are shown where the benchmark is comparable.")
+    note = trend_lineage_note(history, domain, metric)
+    if note:
+        st.caption(note)
+
+
 def _render_overview(school: SchoolResult) -> None:
     website = normalise_website(school.identity.website)
     if website:
@@ -376,7 +450,12 @@ def _render_overview(school: SchoolResult) -> None:
     _render_detail_table(overview_rows(school), "No school information is currently available.")
 
 
-def _render_academics(school: SchoolResult, benchmarks) -> None:
+def _render_academics(
+    school: SchoolResult,
+    benchmarks,
+    history: pd.DataFrame | None = None,
+    history_error: str | None = None,
+) -> None:
     if school.academics.data_year:
         st.caption(f"Performance data: {school.academics.data_year}")
     if school.academics.progress8_year and school.academics.progress8_year != school.academics.data_year:
@@ -385,6 +464,7 @@ def _render_academics(school: SchoolResult, benchmarks) -> None:
         academic_rows(school, benchmarks),
         "No academic performance data is currently available for this school.",
     )
+    _render_trends(history, "academics", error=history_error)
 
 
 def _render_subjects(school: SchoolResult) -> None:
@@ -420,7 +500,12 @@ def _render_ofsted(school: SchoolResult) -> None:
         )
 
 
-def _render_pastoral_behaviour(school: SchoolResult, benchmarks) -> None:
+def _render_pastoral_behaviour(
+    school: SchoolResult,
+    benchmarks,
+    history: pd.DataFrame | None = None,
+    history_error: str | None = None,
+) -> None:
     st.subheader("Parent View")
     _render_detail_table(
         pastoral_rows(school),
@@ -441,6 +526,12 @@ def _render_pastoral_behaviour(school: SchoolResult, benchmarks) -> None:
         attendance_rows(school, benchmarks),
         "No attendance data is currently available for this school.",
     )
+    _render_trends(
+        history,
+        "attendance",
+        heading="Attendance trends",
+        error=history_error,
+    )
 
     st.subheader("Suspensions & exclusions")
     if school.behaviour.data_year:
@@ -449,9 +540,20 @@ def _render_pastoral_behaviour(school: SchoolResult, benchmarks) -> None:
         behaviour_rows(school, benchmarks),
         "No suspension or exclusion data is currently available for this school.",
     )
+    _render_trends(
+        history,
+        "behaviour",
+        heading="Behaviour trends",
+        error=history_error,
+    )
 
 
-def _render_staffing(school: SchoolResult, benchmarks) -> None:
+def _render_staffing(
+    school: SchoolResult,
+    benchmarks,
+    history: pd.DataFrame | None = None,
+    history_error: str | None = None,
+) -> None:
     if school.workforce.data_year:
         st.caption(f"Workforce data: {school.workforce.data_year}")
     st.subheader("Ratios")
@@ -464,9 +566,15 @@ def _render_staffing(school: SchoolResult, benchmarks) -> None:
         workforce_rows(school),
         "No workforce totals are currently available for this school.",
     )
+    _render_trends(history, "workforce", error=history_error)
 
 
-def _render_destinations(school: SchoolResult, benchmarks) -> None:
+def _render_destinations(
+    school: SchoolResult,
+    benchmarks,
+    history: pd.DataFrame | None = None,
+    history_error: str | None = None,
+) -> None:
     destination = school.destinations
     if destination.destination_year:
         cohort = f" for {destination.leaver_year} leavers" if destination.leaver_year else ""
@@ -475,6 +583,7 @@ def _render_destinations(school: SchoolResult, benchmarks) -> None:
         destination_rows(school, benchmarks),
         "No destination data is currently available for this school.",
     )
+    _render_trends(history, "destinations", error=history_error)
 
 
 def _detail_page(search_page=None) -> None:
@@ -520,6 +629,18 @@ def _detail_page(search_page=None) -> None:
     if benchmarks:
         st.caption("Benchmark columns use the matching local authority and England where available.")
 
+    data_dir = os.environ.get("SCHOOL_FINDER_DATA_DIR", str(DEFAULT_DATA_DIR))
+    history = None
+    history_error = None
+    try:
+        history = _cached_history(
+            data_dir,
+            school.identity.urn,
+            school.location.local_authority_code,
+        )
+    except (SchoolFinderError, OSError, ImportError, ValueError) as exc:
+        history_error = str(exc)
+
     tabs = st.tabs(
         [
             "Overview",
@@ -534,17 +655,17 @@ def _detail_page(search_page=None) -> None:
     with tabs[0]:
         _render_overview(school)
     with tabs[1]:
-        _render_academics(school, benchmarks)
+        _render_academics(school, benchmarks, history, history_error)
     with tabs[2]:
         _render_subjects(school)
     with tabs[3]:
         _render_ofsted(school)
     with tabs[4]:
-        _render_pastoral_behaviour(school, benchmarks)
+        _render_pastoral_behaviour(school, benchmarks, history, history_error)
     with tabs[5]:
-        _render_staffing(school, benchmarks)
+        _render_staffing(school, benchmarks, history, history_error)
     with tabs[6]:
-        _render_destinations(school, benchmarks)
+        _render_destinations(school, benchmarks, history, history_error)
 
 
 def main() -> None:

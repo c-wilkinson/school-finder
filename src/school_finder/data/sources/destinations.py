@@ -28,6 +28,16 @@ DESTINATION_SOURCE_NAME = "DfE Key stage 4 destinations - school level"
 DESTINATION_NATIONAL_SOURCE_NAME = "DfE Key stage 4 destinations - national"
 DESTINATION_LA_SOURCE_NAME = "DfE Key stage 4 destinations - local authority"
 
+DESTINATION_METRICS = {
+    "destination_pupil_count": "cohort",
+    "sustained_destination_pct": "overall",
+    "education_destination_pct": "education",
+    "apprenticeship_destination_pct": "appren",
+    "employment_destination_pct": "all_work",
+    "not_sustained_destination_pct": "all_notsust",
+    "unknown_destination_pct": "all_unknown",
+}
+
 
 def _source(dataset_id: str, name: str) -> CsvSource:
     return CsvSource(
@@ -87,7 +97,7 @@ def next_academic_year(value: str) -> str | None:
     return None
 
 
-def _headline(frame: pd.DataFrame, source_name: str) -> tuple[pd.DataFrame, str]:
+def _headline_rows(frame: pd.DataFrame, source_name: str) -> tuple[pd.DataFrame, str]:
     time_col = find_column(frame, "time_period")
     if time_col is None:
         raise SchoolFinderError(f"{source_name} CSV is missing time_period.")
@@ -103,22 +113,18 @@ def _headline(frame: pd.DataFrame, source_name: str) -> tuple[pd.DataFrame, str]
     work = work.dropna(subset=["_time_num"])
     if work.empty:
         raise SchoolFinderError(f"{source_name} CSV contained no usable headline rows.")
+    return work, time_col
+
+
+def _headline(frame: pd.DataFrame, source_name: str) -> tuple[pd.DataFrame, str]:
+    work, time_col = _headline_rows(frame, source_name)
     latest = int(work["_time_num"].max())
     return work[work["_time_num"] == latest].copy(), time_col
 
 
 def _metrics(frame: pd.DataFrame) -> dict[str, pd.Series]:
-    mapping = {
-        "destination_pupil_count": "cohort",
-        "sustained_destination_pct": "overall",
-        "education_destination_pct": "education",
-        "apprenticeship_destination_pct": "appren",
-        "employment_destination_pct": "all_work",
-        "not_sustained_destination_pct": "all_notsust",
-        "unknown_destination_pct": "all_unknown",
-    }
     values: dict[str, pd.Series] = {}
-    for output, source_name in mapping.items():
+    for output, source_name in DESTINATION_METRICS.items():
         col = find_column(frame, source_name)
         values[output] = (
             numeric_quality(frame[col])
@@ -128,34 +134,53 @@ def _metrics(frame: pd.DataFrame) -> dict[str, pd.Series]:
     return values
 
 
-def read_destination_school(path: Path) -> pd.DataFrame:
-    frame = read_public_csv(path, "DfE destinations school-level")
+def _school_frame(frame: pd.DataFrame, *, latest_only: bool) -> pd.DataFrame:
     urn_col = find_column(frame, "school_urn", "urn")
     if urn_col is None:
         raise SchoolFinderError("DfE destination school CSV is missing school_urn.")
     level_col = find_column(frame, "geographic_level")
     if level_col is not None:
         frame = frame[clean_text_series(frame[level_col]).str.casefold().eq("school")].copy()
-    current, time_col = _headline(frame, "DfE destination school")
-    years = clean_text_series(current[time_col])
+    rows, time_col = (
+        _headline(frame, "DfE destination school")
+        if latest_only
+        else _headline_rows(frame, "DfE destination school")
+    )
+    years = clean_text_series(rows[time_col])
     result = pd.DataFrame(
         {
-            "urn": clean_text_series(current[urn_col]),
+            "urn": clean_text_series(rows[urn_col]),
             "destination_leaver_year": years,
             "destination_year": years.map(next_academic_year),
-            **_metrics(current),
+            **_metrics(rows),
         }
     )
     result["destination_source"] = DESTINATION_SOURCE_NAME
     result["destination_source_dataset_id"] = DESTINATION_SCHOOL_DATASET_ID
+    subset = ["urn"] if latest_only else ["urn", "destination_leaver_year"]
     return (
         result[result["urn"].ne("")]
-        .drop_duplicates("urn", keep="last")
+        .drop_duplicates(subset, keep="last")
         .reset_index(drop=True)
     )
 
 
-def _filter_benchmark_rows(frame: pd.DataFrame, source_name: str) -> tuple[pd.DataFrame, str]:
+def read_destination_school(path: Path) -> pd.DataFrame:
+    return _school_frame(
+        read_public_csv(path, "DfE destinations school-level"),
+        latest_only=True,
+    )
+
+
+def read_destination_school_history(path: Path) -> pd.DataFrame:
+    """Return all published school destination cohorts."""
+    return _school_frame(
+        read_public_csv(path, "DfE destinations school-level"),
+        latest_only=False,
+    )
+
+
+def _filter_benchmark_rows(frame: pd.DataFrame) -> pd.DataFrame:
     group_col = find_column(frame, "institution_group")
     if group_col is not None:
         groups = clean_text_series(frame[group_col]).str.casefold()
@@ -168,7 +193,7 @@ def _filter_benchmark_rows(frame: pd.DataFrame, source_name: str) -> tuple[pd.Da
         total = types.eq("total")
         if total.any():
             frame = frame[total].copy()
-    return _headline(frame, source_name)
+    return frame
 
 
 def _benchmark_frame(
@@ -177,32 +202,39 @@ def _benchmark_frame(
     level: str,
     source_name: str,
     dataset_id: str,
+    latest_only: bool,
 ) -> pd.DataFrame:
-    current, time_col = _filter_benchmark_rows(frame, source_name)
-    years = clean_text_series(current[time_col])
+    filtered = _filter_benchmark_rows(frame)
+    rows, time_col = (
+        _headline(filtered, source_name)
+        if latest_only
+        else _headline_rows(filtered, source_name)
+    )
+    years = clean_text_series(rows[time_col])
     if level == "National":
-        code_col = find_column(current, "country_code")
-        name_col = find_column(current, "country_name")
+        code_col = find_column(rows, "country_code")
+        name_col = find_column(rows, "country_name")
     else:
-        code_col = find_column(current, "new_la_code", "local_authority_code")
-        name_col = find_column(current, "la_name", "local_authority_name")
+        code_col = find_column(rows, "new_la_code", "local_authority_code")
+        name_col = find_column(rows, "la_name", "local_authority_name")
     if code_col is None or name_col is None:
         raise SchoolFinderError(f"{source_name} CSV is missing geography identity columns.")
     result = pd.DataFrame(
         {
             "benchmark_level": level,
-            "benchmark_code": clean_text_series(current[code_col]),
-            "benchmark_name": clean_text_series(current[name_col]),
+            "benchmark_code": clean_text_series(rows[code_col]),
+            "benchmark_name": clean_text_series(rows[name_col]),
             "destination_leaver_year": years,
             "destination_year": years.map(next_academic_year),
-            **_metrics(current),
+            **_metrics(rows),
         }
     )
     result["destination_source"] = source_name
     result["destination_source_dataset_id"] = dataset_id
-    return result[result["benchmark_code"].ne("")].drop_duplicates(
-        ["benchmark_level", "benchmark_code"], keep="last"
-    )
+    subset = ["benchmark_level", "benchmark_code"]
+    if not latest_only:
+        subset.append("destination_leaver_year")
+    return result[result["benchmark_code"].ne("")].drop_duplicates(subset, keep="last")
 
 
 def read_destination_benchmarks(national_path: Path, la_path: Path) -> pd.DataFrame:
@@ -211,11 +243,32 @@ def read_destination_benchmarks(national_path: Path, la_path: Path) -> pd.DataFr
         level="National",
         source_name=DESTINATION_NATIONAL_SOURCE_NAME,
         dataset_id=DESTINATION_NATIONAL_DATASET_ID,
+        latest_only=True,
     )
     local = _benchmark_frame(
         read_public_csv(la_path, "DfE destinations local authority"),
         level="Local authority",
         source_name=DESTINATION_LA_SOURCE_NAME,
         dataset_id=DESTINATION_LA_DATASET_ID,
+        latest_only=True,
+    )
+    return pd.concat([national, local], ignore_index=True).reset_index(drop=True)
+
+
+def read_destination_benchmark_history(national_path: Path, la_path: Path) -> pd.DataFrame:
+    """Return all published national and local-authority destination cohorts."""
+    national = _benchmark_frame(
+        read_public_csv(national_path, "DfE destinations national"),
+        level="National",
+        source_name=DESTINATION_NATIONAL_SOURCE_NAME,
+        dataset_id=DESTINATION_NATIONAL_DATASET_ID,
+        latest_only=False,
+    )
+    local = _benchmark_frame(
+        read_public_csv(la_path, "DfE destinations local authority"),
+        level="Local authority",
+        source_name=DESTINATION_LA_SOURCE_NAME,
+        dataset_id=DESTINATION_LA_DATASET_ID,
+        latest_only=False,
     )
     return pd.concat([national, local], ignore_index=True).reset_index(drop=True)

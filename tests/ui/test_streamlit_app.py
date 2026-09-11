@@ -119,6 +119,9 @@ class FakeStreamlit:
     def dataframe(self, frame, **kwargs):
         self.calls.append(("dataframe", tuple(frame.columns), kwargs))
 
+    def line_chart(self, frame, **kwargs):
+        self.calls.append(("line_chart", tuple(frame.columns), kwargs))
+
     def form(self, name):
         self.calls.append(("form", name))
         return self
@@ -883,3 +886,156 @@ def test_detail_page_without_optional_score_benchmarks_or_back_page(monkeypatch)
     assert not any(call[0] == "switch_page" for call in fake.calls)
     assert not any(call[0] == "caption" and "Benchmark columns" in call[1] for call in fake.calls)
     assert not any(call[0] == "caption" and "requested preference data" in call[1] for call in fake.calls)
+
+
+def _trend_history():
+    import pandas as pd
+
+    rows = []
+    for year, school, local, national in (
+        ("202223", 48.0, 47.0, 46.0),
+        ("202324", 50.0, 48.0, 47.0),
+        ("202425", 52.0, 49.0, 48.0),
+        ("202526", 53.0, 50.0, 49.0),
+    ):
+        rows.extend(
+            [
+                {"domain": "academics", "year": year, "metric": "attainment8", "series": "School", "value": school, "source_urn": "100001", "source_school_name": "Example School", "source_kind": "current", "source_link_depth": 0},
+                {"domain": "academics", "year": year, "metric": "attainment8", "series": "Hampshire", "value": local, "source_urn": None, "source_school_name": None, "source_kind": None, "source_link_depth": None},
+                {"domain": "academics", "year": year, "metric": "attainment8", "series": "England", "value": national, "source_urn": None, "source_school_name": None, "source_kind": None, "source_link_depth": None},
+            ]
+        )
+    rows[0]["source_kind"] = "predecessor"
+    rows[0]["source_school_name"] = "Old School"
+    return pd.DataFrame(rows)
+
+
+def test_render_trends_charts_metric_period_benchmarks_and_lineage(monkeypatch):
+    fake = FakeStreamlit()
+    monkeypatch.setattr(streamlit_app, "st", fake)
+
+    streamlit_app._render_trends(_trend_history(), "academics")
+
+    charts = [call for call in fake.calls if call[0] == "line_chart"]
+    assert len(charts) == 1
+    assert charts[0][1] == ("Year", "School", "England", "Hampshire")
+    assert charts[0][2]["width"] == "stretch"
+    captions = [call[1] for call in fake.calls if call[0] == "caption"]
+    assert any("local-authority and England" in caption for caption in captions)
+    assert any("predecessor school: Old School" in caption for caption in captions)
+
+
+def test_render_trends_handles_error_empty_and_insufficient_history(monkeypatch):
+    import pandas as pd
+
+    fake = FakeStreamlit()
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    streamlit_app._render_trends(None, "academics", error="broken")
+    streamlit_app._render_trends(pd.DataFrame(), "academics")
+    streamlit_app._render_trends(
+        pd.DataFrame(
+            [
+                {"domain": "academics", "year": "202425", "metric": "attainment8", "series": "School", "value": 52.0, "source_kind": "current", "source_school_name": "Example"}
+            ]
+        ),
+        "academics",
+    )
+
+    captions = [call[1] for call in fake.calls if call[0] == "caption"]
+    assert "Trend data unavailable: broken" in captions
+    assert "No historical data is currently available for this area." in captions
+    assert "There are not yet two comparable published years for this area." in captions
+    assert not any(call[0] == "line_chart" for call in fake.calls)
+
+
+def test_detail_page_loads_history_once_and_uses_it_for_trend_tabs(monkeypatch):
+    fake = FakeStreamlit()
+    school = _school()
+    result = _result(schools=[school], benchmarks=[_benchmark()])
+    fake.session_state[LATEST_SEARCH_KEY] = result
+    fake.session_state[SELECTED_SCHOOL_URN_KEY] = school.identity.urn
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    monkeypatch.setattr(streamlit_app, "_cached_subjects", lambda *args: ())
+    calls = []
+    monkeypatch.setattr(
+        streamlit_app,
+        "_cached_history",
+        lambda data_dir, urn, la: calls.append((data_dir, urn, la)) or _trend_history(),
+    )
+
+    streamlit_app._detail_page()
+
+    assert len(calls) == 1
+    assert calls[0][1:] == ("100001", "E10000014")
+    assert any(call[0] == "line_chart" for call in fake.calls)
+
+
+def test_detail_page_degrades_when_history_lookup_fails(monkeypatch):
+    fake = FakeStreamlit()
+    school = _school()
+    result = _result(schools=[school], benchmarks=[_benchmark()])
+    fake.session_state[LATEST_SEARCH_KEY] = result
+    fake.session_state[SELECTED_SCHOOL_URN_KEY] = school.identity.urn
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    monkeypatch.setattr(streamlit_app, "_cached_subjects", lambda *args: ())
+    monkeypatch.setattr(
+        streamlit_app,
+        "_cached_history",
+        lambda *args: (_ for _ in ()).throw(ValueError("history failed")),
+    )
+
+    streamlit_app._detail_page()
+
+    assert any(
+        call[0] == "caption" and "Trend data unavailable: history failed" in call[1]
+        for call in fake.calls
+    )
+
+
+def test_render_trends_two_year_school_only_series_skips_period_and_benchmark_caption(monkeypatch):
+    import pandas as pd
+
+    history = pd.DataFrame(
+        [
+            {"domain": "academics", "year": "202324", "metric": "pupil_count", "series": "School", "value": 170, "source_urn": "100001", "source_school_name": "Example School", "source_kind": "current", "source_link_depth": 0},
+            {"domain": "academics", "year": "202425", "metric": "pupil_count", "series": "School", "value": 180, "source_urn": "100001", "source_school_name": "Example School", "source_kind": "current", "source_link_depth": 0},
+        ]
+    )
+    fake = FakeStreamlit(answers={"Metric": "pupil_count"})
+    monkeypatch.setattr(streamlit_app, "st", fake)
+
+    streamlit_app._render_trends(history, "academics")
+
+    assert not any(call[0] == "selectbox" and call[1] == "Period" for call in fake.calls)
+    assert any(call[0] == "line_chart" for call in fake.calls)
+    assert not any(
+        call[0] == "caption" and "local-authority and England" in call[1]
+        for call in fake.calls
+    )
+    assert not any(
+        call[0] == "caption" and "predecessor" in call[1]
+        for call in fake.calls
+    )
+
+
+def test_render_trends_handles_selected_metric_with_less_than_two_chart_rows(monkeypatch):
+    import pandas as pd
+
+    history = pd.DataFrame(
+        [
+            {"domain": "academics", "year": "202324", "metric": "attainment8", "series": "School", "value": 50.0, "source_kind": "current", "source_school_name": "Example"},
+            {"domain": "academics", "year": "202425", "metric": "attainment8", "series": "School", "value": 52.0, "source_kind": "current", "source_school_name": "Example"},
+        ]
+    )
+    fake = FakeStreamlit()
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    one_row = pd.DataFrame({"Year": ["2024/25"], "School": [52.0]})
+    monkeypatch.setattr(streamlit_app, "trend_frame", lambda *args, **kwargs: one_row)
+
+    streamlit_app._render_trends(history, "academics")
+
+    assert any(
+        call[0] == "caption" and "not yet two comparable published years for this metric" in call[1]
+        for call in fake.calls
+    )
+    assert not any(call[0] == "line_chart" for call in fake.calls)
