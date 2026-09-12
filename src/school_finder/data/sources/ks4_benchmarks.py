@@ -134,56 +134,72 @@ def _metric_values(frame: pd.DataFrame, mapping: dict[str, str]) -> dict[str, pd
     return values
 
 
+def _history_from_headline(headline: pd.DataFrame) -> pd.DataFrame:
+    time_col = find_column(headline, "time_period")
+    assert time_col is not None
+    identity = _benchmark_identity(headline)
+    result = identity.copy()
+    result["performance_year"] = clean_text_series(headline[time_col])
+    for name, values in _metric_values(headline, CURRENT_METRICS).items():
+        result[name] = values
+    for name, values in _metric_values(headline, PROGRESS_METRICS).items():
+        result[name] = values
+    return (
+        result[result["benchmark_code"].ne("") & result["performance_year"].ne("")]
+        .drop_duplicates(
+            ["benchmark_level", "benchmark_code", "performance_year"], keep="last"
+        )
+        .reset_index(drop=True)
+    )
+
+
+def read_ks4_benchmark_history(path: Path) -> pd.DataFrame:
+    """Return all published KS4 benchmark headline rows by geography and year."""
+    frame = read_public_csv(path, "DfE KS4 benchmarks")
+    return _history_from_headline(_headline_rows(frame))
+
+
 def read_ks4_benchmarks(path: Path) -> pd.DataFrame:
     """Return current England/LA benchmarks plus latest published Progress 8."""
 
     frame = read_public_csv(path, "DfE KS4 benchmarks")
     headline = _headline_rows(frame)
+    history = _history_from_headline(headline)
     time_col = find_column(headline, "time_period")
     assert time_col is not None
 
     latest_time = int(headline["_time_num"].max())
-    current = headline[headline["_time_num"] == latest_time].copy()
-    result = _benchmark_identity(current)
-    result["performance_year"] = clean_text_series(current[time_col])
-    for name, values in _metric_values(current, CURRENT_METRICS).items():
-        result[name] = values
+    latest_labels = clean_text_series(
+        headline.loc[headline["_time_num"].eq(latest_time), time_col]
+    )
+    latest_label = latest_labels.iloc[-1]
+
+    identity_columns = ["benchmark_level", "benchmark_code", "benchmark_name"]
+    result = history[history["performance_year"].eq(latest_label)][
+        [*identity_columns, "performance_year", *CURRENT_METRICS]
+    ].copy()
 
     progress_columns = ["progress8_year", *PROGRESS_METRICS]
     for column in progress_columns:
         result[column] = pd.NA
 
-    progress_col = find_column(headline, "progress8_average")
-    if progress_col is not None:
-        p8 = headline.copy()
-        p8["_progress8"] = numeric_quality(p8[progress_col])
-        p8 = p8[p8["_progress8"].notna()].copy()
-        if not p8.empty:
-            identity = _benchmark_identity(p8)
-            p8 = pd.concat(
-                [
-                    identity.reset_index(drop=True),
-                    p8.reset_index(drop=True),
-                ],
-                axis=1,
-            )
-            p8 = (
-                p8.sort_values(
-                    ["benchmark_level", "benchmark_code", "_time_num"],
-                    kind="stable",
-                )
-                .drop_duplicates(["benchmark_level", "benchmark_code"], keep="last")
-            )
-            progress = p8[["benchmark_level", "benchmark_code"]].copy()
-            progress["progress8_year"] = clean_text_series(p8[time_col])
-            for name, values in _metric_values(p8, PROGRESS_METRICS).items():
-                progress[name] = values
-            result = result.drop(columns=progress_columns).merge(
-                progress,
-                on=["benchmark_level", "benchmark_code"],
-                how="left",
-                validate="one_to_one",
-            )
+    p8 = history[history["progress8"].notna()].copy()
+    if not p8.empty:
+        p8["_time_num"] = pd.to_numeric(p8["performance_year"], errors="coerce")
+        p8 = (
+            p8.dropna(subset=["_time_num"])
+            .sort_values(["benchmark_level", "benchmark_code", "_time_num"], kind="stable")
+            .drop_duplicates(["benchmark_level", "benchmark_code"], keep="last")
+        )
+        progress = p8[["benchmark_level", "benchmark_code", "performance_year", *PROGRESS_METRICS]].rename(
+            columns={"performance_year": "progress8_year"}
+        )
+        result = result.drop(columns=progress_columns).merge(
+            progress,
+            on=["benchmark_level", "benchmark_code"],
+            how="left",
+            validate="one_to_one",
+        )
 
     result["source"] = BENCHMARK_SOURCE_NAME
     result["source_dataset_id"] = EES_KS4_BENCHMARK_DATASET_ID

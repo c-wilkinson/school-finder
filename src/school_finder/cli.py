@@ -11,8 +11,10 @@ import pandas as pd
 
 from school_finder.config import (
     BENCHMARKS_FILENAME,
+    BENCHMARK_HISTORY_FILENAME,
     DEFAULT_DATA_DIR,
     MANIFEST_FILENAME,
+    HISTORY_FILENAME,
     POSTCODES_FILENAME,
     SCHOOLS_FILENAME,
     SUBJECTS_FILENAME,
@@ -264,6 +266,10 @@ def _run_build(args: argparse.Namespace) -> int:
             updated.append(BENCHMARKS_FILENAME)
         if result.subjects_updated:
             updated.append(SUBJECTS_FILENAME)
+        if result.history_updated:
+            updated.append(HISTORY_FILENAME)
+        if result.benchmark_history_updated:
+            updated.append(BENCHMARK_HISTORY_FILENAME)
         print("Updated: " + ", ".join(updated))
         print(f"Published: {args.data_dir / MANIFEST_FILENAME}")
     else:

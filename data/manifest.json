@@ -2,6 +2,20 @@
   "coverage": "England",
   "dataset_version": "gias-2026-09-11__onspd-2026-08",
   "files": {
+    "benchmark_history.parquet": {
+      "bytes": 429121,
+      "columns": [
+        "benchmark_level",
+        "benchmark_code",
+        "benchmark_name",
+        "domain",
+        "year",
+        "metric",
+        "value"
+      ],
+      "rows": 91078,
+      "sha256": "4cae89cc1e0e77ed67f09ee2ef6e4005b6b694007a408c3e987f9b0bfb4e4b01"
+    },
     "benchmarks.parquet": {
       "bytes": 87172,
       "columns": [
@@ -84,6 +98,22 @@
       ],
       "rows": 155,
       "sha256": "f0a8291be2ce313a08e57263bd223aec83d4dc362afbcab57ca446a0db2170bb"
+    },
+    "history.parquet": {
+      "bytes": 24836043,
+      "columns": [
+        "urn",
+        "domain",
+        "year",
+        "metric",
+        "value",
+        "source_urn",
+        "source_school_name",
+        "source_kind",
+        "source_link_depth"
+      ],
+      "rows": 8166260,
+      "sha256": "65f5e228d0a5bccc90504f5b6a8ea344c879c1faf45f97cbbdc01d29274b8bc0"
     },
     "postcodes.parquet": {
       "bytes": 63252765,
@@ -284,8 +314,8 @@
       "sha256": "e74d0435fa84e793675db7528586246d3b99c323d106e104108639d410a6cf15"
     }
   },
-  "generated_at": "2026-09-11T05:59:29.407213Z",
-  "schema_version": 8,
+  "generated_at": "2026-09-11T12:24:28.453870Z",
+  "schema_version": 9,
   "sources": {
     "attendance_benchmarks": {
       "download_url": "https://explore-education-statistics.service.gov.uk/data-catalogue/data-set/d37f27c4-cca2-4274-97e9-1cdcb4ecad18/csv",

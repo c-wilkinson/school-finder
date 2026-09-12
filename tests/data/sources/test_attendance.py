@@ -206,3 +206,41 @@ def test_attendance_benchmark_validation_and_missing_optional_metrics(tmp_path: 
     pd.DataFrame([minimal]).to_csv(optional, index=False)
     result = attendance.read_attendance_benchmarks(optional).iloc[0]
     assert pd.isna(result["overall_absence_pct"])
+
+
+def test_attendance_history_keeps_multiple_published_years(tmp_path: Path):
+    school_path = tmp_path / "attendance-history.csv"
+    pd.DataFrame([
+        _school_row(time_period="202324", sess_overall_percent="8.2"),
+        _school_row(time_period="202425", sess_overall_percent="7.1"),
+    ]).to_csv(school_path, index=False)
+
+    school = attendance.read_attendance_school_history(school_path)
+    assert school["attendance_year"].tolist() == ["202324", "202425"]
+    assert school["overall_absence_pct"].tolist() == [8.2, 7.1]
+
+    benchmark_path = tmp_path / "attendance-benchmark-history.csv"
+    pd.DataFrame([
+        _benchmark_row(time_period="202324", sess_overall_percent="7.8"),
+        _benchmark_row(time_period="202425", sess_overall_percent="7.2"),
+        _benchmark_row(
+            time_period="202324",
+            geographic_level="Local authority",
+            new_la_code="E10000014",
+            la_name="Hampshire",
+            sess_overall_percent="7.0",
+        ),
+        _benchmark_row(
+            time_period="202425",
+            geographic_level="Local authority",
+            new_la_code="E10000014",
+            la_name="Hampshire",
+            sess_overall_percent="6.8",
+        ),
+    ]).to_csv(benchmark_path, index=False)
+
+    benchmarks = attendance.read_attendance_benchmark_history(benchmark_path)
+    england = benchmarks[benchmarks["benchmark_code"].eq("E92000001")]
+    hampshire = benchmarks[benchmarks["benchmark_code"].eq("E10000014")]
+    assert england["attendance_year"].tolist() == ["202324", "202425"]
+    assert hampshire["attendance_year"].tolist() == ["202324", "202425"]

@@ -68,6 +68,11 @@ def _fake_parquet_writes(monkeypatch):
     monkeypatch.setattr(build, "parquet_metadata", lambda path: {"rows":1, "bytes":path.stat().st_size, "sha256":"hash", "columns":["x"]})
 
 
+def _existing_history_files(tmp_path):
+    (tmp_path / "history.parquet").write_bytes(b"history")
+    (tmp_path / "benchmark_history.parquet").write_bytes(b"benchmark-history")
+
+
 def _mock_context_readers(monkeypatch):
     monkeypatch.setattr(build, "read_ks4_subjects", lambda path: pd.DataFrame([{"urn":"1", "subject":"Maths"}]))
     monkeypatch.setattr(build, "read_destination_school", lambda path: pd.DataFrame(columns=["urn", *build.DESTINATION_COLUMNS]))
@@ -94,6 +99,16 @@ def _mock_context_readers(monkeypatch):
         build,
         "read_workforce_benchmarks",
         lambda *paths: pd.DataFrame([{"benchmark_level": "National", "benchmark_code": "E92000001", "benchmark_name": "England"}]),
+    )
+    monkeypatch.setattr(
+        build,
+        "build_school_history",
+        lambda *args, **kwargs: pd.DataFrame([{"urn": "1", "domain": "academics", "year": "202425", "metric": "attainment8", "value": 50}]),
+    )
+    monkeypatch.setattr(
+        build,
+        "build_benchmark_history",
+        lambda **kwargs: pd.DataFrame([{"benchmark_level": "National", "benchmark_code": "E92000001", "benchmark_name": "England", "domain": "academics", "year": "202425", "metric": "attainment8", "value": 46}]),
     )
 
 
@@ -181,6 +196,7 @@ def test_build_returns_unchanged_when_every_source_is_current(tmp_path, monkeypa
     (tmp_path / "postcodes.parquet").touch()
     (tmp_path / "benchmarks.parquet").touch()
     (tmp_path / "subjects.parquet").write_bytes(b"subjects")
+    _existing_history_files(tmp_path)
     existing = {"schema_version": MANIFEST_SCHEMA_VERSION, "sources":{}, "sentinel":True}
     monkeypatch.setattr(build, "read_manifest", lambda path: existing)
     monkeypatch.setattr(build, "source_matches", lambda *args, **kwargs: True)
@@ -221,11 +237,15 @@ def test_build_force_rebuilds_and_publishes_both_datasets(tmp_path, monkeypatch)
     assert result.postcodes_updated is True
     assert result.benchmarks_updated is True
     assert result.subjects_updated is True
+    assert result.history_updated is True
+    assert result.benchmark_history_updated is True
     assert result.manifest_updated is True
     assert (tmp_path / "schools.parquet").exists()
     assert (tmp_path / "postcodes.parquet").exists()
     assert (tmp_path / "benchmarks.parquet").exists()
     assert (tmp_path / "subjects.parquet").exists()
+    assert (tmp_path / "history.parquet").exists()
+    assert (tmp_path / "benchmark_history.parquet").exists()
     assert (tmp_path / "manifest.json").exists()
     assert result.manifest["schema_version"] == MANIFEST_SCHEMA_VERSION
     assert result.manifest["dataset_version"] == "gias-2026-09-07__onspd-2026-08"
@@ -241,6 +261,7 @@ def test_build_only_refreshes_postcodes_when_school_sources_are_current(tmp_path
     (tmp_path / "postcodes.parquet").write_bytes(b"old")
     (tmp_path / "benchmarks.parquet").write_bytes(b"benchmarks")
     (tmp_path / "subjects.parquet").write_bytes(b"subjects")
+    _existing_history_files(tmp_path)
     existing = {"schema_version": MANIFEST_SCHEMA_VERSION, "sources":{}}
     monkeypatch.setattr(build, "read_manifest", lambda path: existing)
     monkeypatch.setattr(build, "source_matches", lambda manifest, name, expected, keys: name != "onspd")
@@ -265,6 +286,7 @@ def test_build_only_refreshes_schools_when_postcodes_are_current(tmp_path, monke
     (tmp_path / "postcodes.parquet").write_bytes(b"existing")
     (tmp_path / "benchmarks.parquet").write_bytes(b"benchmarks")
     (tmp_path / "subjects.parquet").write_bytes(b"subjects")
+    _existing_history_files(tmp_path)
     existing = {"schema_version": MANIFEST_SCHEMA_VERSION, "sources":{}}
     monkeypatch.setattr(build, "read_manifest", lambda path: existing)
     monkeypatch.setattr(
@@ -318,6 +340,7 @@ def test_build_only_refreshes_benchmarks_when_other_datasets_are_current(tmp_pat
     (tmp_path / "postcodes.parquet").write_bytes(b"postcodes")
     (tmp_path / "benchmarks.parquet").write_bytes(b"old")
     (tmp_path / "subjects.parquet").write_bytes(b"subjects")
+    _existing_history_files(tmp_path)
     existing = {"schema_version": MANIFEST_SCHEMA_VERSION, "sources": {}}
     monkeypatch.setattr(build, "read_manifest", lambda path: existing)
     monkeypatch.setattr(
@@ -355,6 +378,7 @@ def test_build_only_refreshes_subjects_when_other_datasets_are_current(tmp_path,
     (tmp_path / "postcodes.parquet").write_bytes(b"postcodes")
     (tmp_path / "benchmarks.parquet").write_bytes(b"benchmarks")
     (tmp_path / "subjects.parquet").write_bytes(b"old")
+    _existing_history_files(tmp_path)
     existing = {"schema_version": MANIFEST_SCHEMA_VERSION, "sources": {}}
     monkeypatch.setattr(build, "read_manifest", lambda path: existing)
     monkeypatch.setattr(
@@ -380,6 +404,7 @@ def test_build_rejects_empty_benchmark_result(tmp_path, monkeypatch):
     (tmp_path / "schools.parquet").touch()
     (tmp_path / "postcodes.parquet").touch()
     (tmp_path / "subjects.parquet").touch()
+    _existing_history_files(tmp_path)
     monkeypatch.setattr(build, "read_manifest", lambda path: {"schema_version": MANIFEST_SCHEMA_VERSION, "sources": {}})
     monkeypatch.setattr(
         build,
@@ -405,6 +430,7 @@ def test_build_rejects_empty_subject_result(tmp_path, monkeypatch):
     (tmp_path / "schools.parquet").touch()
     (tmp_path / "postcodes.parquet").touch()
     (tmp_path / "benchmarks.parquet").touch()
+    _existing_history_files(tmp_path)
     monkeypatch.setattr(build, "read_manifest", lambda path: {"schema_version": MANIFEST_SCHEMA_VERSION, "sources": {}})
     monkeypatch.setattr(build, "source_matches", lambda manifest, name, expected, keys: name != "ks4_subjects")
     monkeypatch.setattr(build, "download_csv", lambda *a, **k: None)
@@ -816,3 +842,222 @@ def test_lineage_graph_accepts_valid_edge_without_predecessor_name():
     assert predecessors == {"2": ["1"]}
     assert predecessor_names == {}
     assert current_names == {"2": "Current"}
+
+
+def test_build_school_history_combines_supported_domains(monkeypatch):
+    schools = pd.DataFrame([{"urn": "2", "school_name": "Current School"}])
+    links = pd.DataFrame(
+        [{"successor_urn": "2", "predecessor_urn": "1", "predecessor_name": "Old School"}]
+    )
+    monkeypatch.setattr(
+        build,
+        "read_ks4_history",
+        lambda path: pd.DataFrame(
+            [{"urn": "1", "performance_year": "202324", "attainment8": 50.0}]
+        ),
+    )
+    monkeypatch.setattr(
+        build,
+        "read_attendance_school_history",
+        lambda path: pd.DataFrame(
+            [{"urn": "2", "attendance_year": "202425", "overall_absence_pct": 6.0}]
+        ),
+    )
+    monkeypatch.setattr(
+        build,
+        "read_behaviour_school_history",
+        lambda path: pd.DataFrame(
+            [{"urn": "2", "behaviour_year": "202425", "suspension_rate": 4.0}]
+        ),
+    )
+    monkeypatch.setattr(
+        build,
+        "read_workforce_school_history",
+        lambda *paths: pd.DataFrame(
+            [{"urn": "2", "history_year": "202526", "pupil_teacher_ratio": 16.7}]
+        ),
+    )
+    monkeypatch.setattr(
+        build,
+        "read_destination_school_history",
+        lambda path: pd.DataFrame(
+            [{"urn": "2", "destination_leaver_year": "202223", "sustained_destination_pct": 94.0}]
+        ),
+    )
+
+    result = build.build_school_history(
+        schools,
+        links,
+        ks4_path=Path("ks4"),
+        attendance_path=Path("attendance"),
+        behaviour_path=Path("behaviour"),
+        workforce_path=Path("workforce"),
+        workforce_ratio_path=Path("ratios"),
+        destination_path=Path("destinations"),
+    )
+
+    assert set(result["domain"]) == {
+        "academics",
+        "attendance",
+        "behaviour",
+        "workforce",
+        "destinations",
+    }
+    academic = result[result["domain"].eq("academics")].iloc[0]
+    assert academic["urn"] == "2"
+    assert academic["source_urn"] == "1"
+    assert academic["source_kind"] == "predecessor"
+
+
+def test_build_benchmark_history_combines_supported_domains(monkeypatch):
+    def benchmark(year_column, year, metric, value):
+        return pd.DataFrame(
+            [
+                {
+                    "benchmark_level": "National",
+                    "benchmark_code": "E92000001",
+                    "benchmark_name": "England",
+                    year_column: year,
+                    metric: value,
+                }
+            ]
+        )
+
+    monkeypatch.setattr(
+        build,
+        "read_ks4_benchmark_history",
+        lambda path: benchmark("performance_year", "202425", "attainment8", 48.0),
+    )
+    monkeypatch.setattr(
+        build,
+        "read_attendance_benchmark_history",
+        lambda path: benchmark("attendance_year", "202425", "overall_absence_pct", 7.0),
+    )
+    monkeypatch.setattr(
+        build,
+        "read_behaviour_benchmark_history",
+        lambda path: benchmark("behaviour_year", "202425", "suspension_rate", 5.0),
+    )
+    monkeypatch.setattr(
+        build,
+        "read_workforce_benchmark_history",
+        lambda *paths: benchmark("history_year", "202526", "pupil_teacher_ratio", 17.0),
+    )
+    monkeypatch.setattr(
+        build,
+        "read_destination_benchmark_history",
+        lambda *paths: benchmark(
+            "destination_leaver_year", "202223", "sustained_destination_pct", 92.0
+        ),
+    )
+
+    result = build.build_benchmark_history(
+        ks4_path=Path("ks4"),
+        attendance_path=Path("attendance"),
+        behaviour_path=Path("behaviour"),
+        workforce_path=Path("workforce"),
+        workforce_ratio_path=Path("ratios"),
+        destination_national_path=Path("destinations-national"),
+        destination_la_path=Path("destinations-la"),
+    )
+
+    assert set(result["domain"]) == {
+        "academics",
+        "attendance",
+        "behaviour",
+        "workforce",
+        "destinations",
+    }
+    assert set(result["benchmark_name"]) == {"England"}
+
+
+def test_build_rejects_empty_school_history(tmp_path, monkeypatch):
+    _disable_pyarrow_guard(monkeypatch)
+    _sources(monkeypatch)
+    _mock_context_readers(monkeypatch)
+    (tmp_path / "schools.parquet").write_bytes(b"old")
+    (tmp_path / "postcodes.parquet").write_bytes(b"existing")
+    (tmp_path / "benchmarks.parquet").write_bytes(b"benchmarks")
+    (tmp_path / "subjects.parquet").write_bytes(b"subjects")
+    _existing_history_files(tmp_path)
+    existing = {"schema_version": MANIFEST_SCHEMA_VERSION, "sources": {}}
+    monkeypatch.setattr(build, "read_manifest", lambda path: existing)
+    monkeypatch.setattr(
+        build,
+        "source_matches",
+        lambda manifest, name, expected, keys: name in {
+            "onspd",
+            "ks4_subjects",
+            "ks4_benchmarks",
+            "destinations_national",
+            "destinations_local_authority",
+            "attendance_benchmarks",
+            "behaviour_benchmarks",
+            "workforce_benchmarks",
+            "workforce_ratio_benchmarks",
+        },
+    )
+    monkeypatch.setattr(build, "download_gias_csv", lambda *a, **k: None)
+    monkeypatch.setattr(build, "download_gias_links_csv", lambda *a, **k: None)
+    monkeypatch.setattr(build, "read_gias_links_csv", lambda path: pd.DataFrame())
+    monkeypatch.setattr(
+        build,
+        "clean_gias_links_data",
+        lambda raw, establishments, source: pd.DataFrame(
+            columns=["successor_urn", "predecessor_urn", "predecessor_name"]
+        ),
+    )
+    schools = pd.DataFrame(
+        {"urn": [str(i) for i in range(10_000)], "school_name": ["S"] * 10_000}
+    )
+    monkeypatch.setattr(build, "read_gias_csv", lambda path: pd.DataFrame())
+    monkeypatch.setattr(build, "clean_gias_data", lambda raw, source: schools)
+    monkeypatch.setattr(build, "download_csv", lambda *a, **k: None)
+    monkeypatch.setattr(
+        build,
+        "read_ofsted_quality",
+        lambda path: pd.DataFrame(
+            columns=["urn", "ofsted_publication_date", "ofsted_inspection_date"]
+        ),
+    )
+    monkeypatch.setattr(build, "read_ks4_quality", lambda path: pd.DataFrame(columns=["urn"]))
+    monkeypatch.setattr(build, "build_school_history", lambda *a, **k: pd.DataFrame())
+
+    with pytest.raises(SchoolFinderError, match="historical school data produced no usable"):
+        build.build_datasets(tmp_path)
+
+
+def test_build_rejects_empty_benchmark_history(tmp_path, monkeypatch):
+    _disable_pyarrow_guard(monkeypatch)
+    _sources(monkeypatch)
+    _mock_context_readers(monkeypatch)
+    (tmp_path / "schools.parquet").write_bytes(b"schools")
+    (tmp_path / "postcodes.parquet").write_bytes(b"postcodes")
+    (tmp_path / "benchmarks.parquet").write_bytes(b"old")
+    (tmp_path / "subjects.parquet").write_bytes(b"subjects")
+    _existing_history_files(tmp_path)
+    existing = {"schema_version": MANIFEST_SCHEMA_VERSION, "sources": {}}
+    monkeypatch.setattr(build, "read_manifest", lambda path: existing)
+    monkeypatch.setattr(
+        build,
+        "source_matches",
+        lambda manifest, name, expected, keys: name != "ks4_benchmarks",
+    )
+    monkeypatch.setattr(build, "download_csv", lambda *a, **k: None)
+    monkeypatch.setattr(
+        build,
+        "read_ks4_benchmarks",
+        lambda path: pd.DataFrame(
+            [
+                {
+                    "benchmark_level": "National",
+                    "benchmark_code": "E92000001",
+                    "benchmark_name": "England",
+                }
+            ]
+        ),
+    )
+    monkeypatch.setattr(build, "build_benchmark_history", lambda **kwargs: pd.DataFrame())
+
+    with pytest.raises(SchoolFinderError, match="historical benchmark data produced no usable"):
+        build.build_datasets(tmp_path)

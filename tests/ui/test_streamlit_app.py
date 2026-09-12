@@ -21,18 +21,21 @@ from school_finder.models.school import (
     AcademicPerformance,
     AttendanceStatistics,
     BehaviourStatistics,
+    DestinationStatistics,
     InspectionSummary,
     PastoralCareStatistics,
     SchoolBenchmarks,
     SchoolIdentity,
     SchoolLocation,
     SchoolResult,
+    SubjectResult,
     TravelInformation,
     WorkforceStatistics,
 )
 from school_finder.models.scoring import SchoolScore
 from school_finder.models.search import PostcodeLocation, SchoolSearchRequest, SchoolSearchResult
 from school_finder.ui import streamlit_app
+from school_finder.ui.state import LATEST_SEARCH_KEY, SELECTED_SCHOOL_URN_KEY
 
 
 class FakeColumn:
@@ -45,6 +48,20 @@ class FakeColumn:
     def metric(self, label, value, **kwargs):
         self.parent.calls.append(("metric", label, value, kwargs))
 
+    def button(self, label, **kwargs):
+        return self.parent.button(label, **kwargs)
+
+
+class FakePage:
+    def __init__(self, parent, page, **kwargs):
+        self.parent = parent
+        self.page = page
+        self.kwargs = kwargs
+
+    def run(self):
+        self.parent.calls.append(("page_run", self.kwargs))
+        return self.page()
+
 
 class FakeStreamlit:
     def __init__(self, answers=None, submitted=False):
@@ -52,6 +69,7 @@ class FakeStreamlit:
         self.submitted = submitted
         self.calls = []
         self.sidebar = self
+        self.session_state = {}
 
     def __enter__(self):
         return self
@@ -68,6 +86,14 @@ class FakeStreamlit:
 
     def set_page_config(self, **kwargs):
         self.calls.append(("set_page_config", kwargs))
+
+    def Page(self, page, **kwargs):
+        self.calls.append(("Page", kwargs))
+        return FakePage(self, page, **kwargs)
+
+    def navigation(self, pages, **kwargs):
+        self.calls.append(("navigation", len(pages), kwargs))
+        return pages[0]
 
     def title(self, text):
         self.calls.append(("title", text))
@@ -95,6 +121,9 @@ class FakeStreamlit:
 
     def dataframe(self, frame, **kwargs):
         self.calls.append(("dataframe", tuple(frame.columns), kwargs))
+
+    def line_chart(self, frame, **kwargs):
+        self.calls.append(("line_chart", tuple(frame.columns), kwargs))
 
     def form(self, name):
         self.calls.append(("form", name))
@@ -132,6 +161,20 @@ class FakeStreamlit:
 
     def form_submit_button(self, *args, **kwargs):
         return self.submitted
+
+    def button(self, label, **kwargs):
+        self.calls.append(("button", label, kwargs))
+        return self._answer(label, False)
+
+    def switch_page(self, page):
+        self.calls.append(("switch_page", page))
+
+    def rerun(self):
+        self.calls.append(("rerun",))
+
+    def tabs(self, labels):
+        self.calls.append(("tabs", tuple(labels)))
+        return [self for _ in labels]
 
     def columns(self, spec):
         count = spec if isinstance(spec, int) else len(spec)
@@ -187,11 +230,11 @@ def _benchmark():
 
 def _result(*, schools=None, current=True, termination_date=None, preferences=True, benchmarks=None):
     request = SchoolSearchRequest(
-        "RG22 6SX",
+        "SW1A 2AA",
         radius_miles=5,
         preferences=(
             streamlit_app.build_search_request(
-                postcode="RG22 6SX",
+                postcode="SW1A 2AA",
                 radius_miles=5,
                 limit=10,
                 preset=PreferencePreset.BALANCED,
@@ -202,7 +245,7 @@ def _result(*, schools=None, current=True, termination_date=None, preferences=Tr
     )
     return SchoolSearchResult(
         request=request,
-        postcode=PostcodeLocation("RG22 6SX", 1, 2, current, termination_date),
+        postcode=PostcodeLocation("SW1A 2AA", 1, 2, current, termination_date),
         schools=tuple(schools if schools is not None else [_school()]),
         benchmarks=tuple(benchmarks if benchmarks is not None else [_benchmark()]),
     )
@@ -273,21 +316,21 @@ def test_sidebar_form_not_submitted_still_renders_links(monkeypatch):
 
 
 def test_sidebar_form_builds_balanced_request(monkeypatch):
-    fake = FakeStreamlit({"Postcode": "RG22 6SX"}, submitted=True)
+    fake = FakeStreamlit({"Postcode": "SW1A 2AA"}, submitted=True)
     monkeypatch.setattr(streamlit_app, "st", fake)
     submitted, request = streamlit_app._sidebar_form()
     assert submitted is True
-    assert request.postcode == "RG22 6SX"
+    assert request.postcode == "SW1A 2AA"
     assert request.radius_miles == 5
     assert request.limit == 10
     assert request.preferences == streamlit_app.build_search_request(
-        postcode="RG22 6SX", radius_miles=5, limit=10
+        postcode="SW1A 2AA", radius_miles=5, limit=10
     ).preferences
 
 
 def test_sidebar_form_supports_custom_weights_and_all_filters(monkeypatch):
     answers = {
-        "Postcode": "RG22 6SX",
+        "Postcode": "SW1A 2AA",
         "Radius (miles)": 7.5,
         "Maximum results": 15,
         "What matters most?": "Custom",
@@ -335,7 +378,7 @@ def test_sidebar_form_supports_custom_weights_and_all_filters(monkeypatch):
 def test_sidebar_form_supports_sort_only(monkeypatch):
     fake = FakeStreamlit(
         {
-            "Postcode": "RG22 6SX",
+            "Postcode": "SW1A 2AA",
             "What matters most?": "No preference scoring",
             "Sort by": "Pastoral care",
             "Descending": True,
@@ -391,7 +434,7 @@ def test_render_results_renders_cards_and_benchmarks(monkeypatch):
     fake = FakeStreamlit()
     monkeypatch.setattr(streamlit_app, "st", fake)
     rendered = []
-    monkeypatch.setattr(streamlit_app, "_render_school_card", lambda i, school, result: rendered.append((i, school)))
+    monkeypatch.setattr(streamlit_app, "_render_school_card", lambda i, school, result, detail_page=None, compare_page=None: rendered.append((i, school)))
     result = _result(schools=[_school(), _school()], benchmarks=[_benchmark()])
     streamlit_app._render_results(result)
     assert [item[0] for item in rendered] == [1, 2]
@@ -466,7 +509,7 @@ def test_sidebar_form_rejects_blank_postcode(monkeypatch):
 
 
 def test_sidebar_form_rejects_all_zero_custom_weights(monkeypatch):
-    answers = {"Postcode": "RG22 6SX", "What matters most?": "Custom"}
+    answers = {"Postcode": "SW1A 2AA", "What matters most?": "Custom"}
     answers.update({label: 0 for label in streamlit_app._WEIGHT_LABELS.values()})
     fake = FakeStreamlit(answers, submitted=True)
     monkeypatch.setattr(streamlit_app, "st", fake)
@@ -485,14 +528,14 @@ def test_main_submitted_invalid_form_does_not_search(monkeypatch):
 def test_main_runs_search_and_renders_results(monkeypatch, tmp_path):
     fake = FakeStreamlit()
     monkeypatch.setattr(streamlit_app, "st", fake)
-    request = SchoolSearchRequest("RG22 6SX")
+    request = SchoolSearchRequest("SW1A 2AA")
     expected = _result(preferences=False)
     monkeypatch.setattr(streamlit_app, "_sidebar_form", lambda: (True, request))
     monkeypatch.setenv("SCHOOL_FINDER_DATA_DIR", str(tmp_path))
     searched = []
     monkeypatch.setattr(streamlit_app, "_cached_search", lambda data_dir, req: searched.append((data_dir, req)) or expected)
     rendered = []
-    monkeypatch.setattr(streamlit_app, "_render_results", lambda result: rendered.append(result))
+    monkeypatch.setattr(streamlit_app, "_render_results", lambda result, detail_page=None, compare_page=None: rendered.append(result))
     streamlit_app.main()
     assert searched == [(str(tmp_path), request)]
     assert rendered == [expected]
@@ -501,8 +544,729 @@ def test_main_runs_search_and_renders_results(monkeypatch, tmp_path):
 def test_main_shows_search_errors(monkeypatch):
     fake = FakeStreamlit()
     monkeypatch.setattr(streamlit_app, "st", fake)
-    request = SchoolSearchRequest("RG22 6SX")
+    request = SchoolSearchRequest("SW1A 2AA")
     monkeypatch.setattr(streamlit_app, "_sidebar_form", lambda: (True, request))
     monkeypatch.setattr(streamlit_app, "_cached_search", lambda *args: (_ for _ in ()).throw(ValueError("bad search")))
     streamlit_app.main()
     assert any(call[0] == "error" and "bad search" in call[1] for call in fake.calls)
+
+
+def test_main_uses_page_navigation_shell(monkeypatch):
+    fake = FakeStreamlit()
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    monkeypatch.setattr(streamlit_app, "_sidebar_form", lambda: (False, None))
+
+    streamlit_app.main()
+
+    page_calls = [call for call in fake.calls if call[0] == "Page"]
+    assert page_calls == [
+        (
+            "Page",
+            {
+                "title": "Find schools",
+                "icon": "🔎",
+                "url_path": "find-schools",
+                "default": True,
+            },
+        ),
+        (
+            "Page",
+            {
+                "title": "Compare schools",
+                "icon": "⚖️",
+                "url_path": "compare-schools",
+            },
+        ),
+        (
+            "Page",
+            {
+                "title": "School detail",
+                "icon": "🏫",
+                "url_path": "school-detail",
+            },
+        ),
+    ]
+    assert ("navigation", 3, {}) in fake.calls
+    assert any(call[0] == "page_run" for call in fake.calls)
+
+
+def test_search_page_renders_stored_result_without_resubmitting(monkeypatch):
+    fake = FakeStreamlit()
+    expected = _result(preferences=False)
+    fake.session_state[LATEST_SEARCH_KEY] = expected
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    monkeypatch.setattr(streamlit_app, "_sidebar_form", lambda: (False, None))
+    rendered = []
+    monkeypatch.setattr(streamlit_app, "_render_results", lambda result, detail_page=None, compare_page=None: rendered.append(result))
+
+    streamlit_app._search_page()
+
+    assert rendered == [expected]
+    assert not any(call[0] == "info" and "get started" in call[1] for call in fake.calls)
+
+
+def test_failed_search_preserves_and_renders_previous_result(monkeypatch):
+    fake = FakeStreamlit()
+    previous = _result(preferences=False)
+    fake.session_state[LATEST_SEARCH_KEY] = previous
+    request = SchoolSearchRequest("SW1A 2AA")
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    monkeypatch.setattr(streamlit_app, "_sidebar_form", lambda: (True, request))
+    monkeypatch.setattr(
+        streamlit_app,
+        "_cached_search",
+        lambda *args: (_ for _ in ()).throw(ValueError("bad search")),
+    )
+    rendered = []
+    monkeypatch.setattr(streamlit_app, "_render_results", lambda result, detail_page=None, compare_page=None: rendered.append(result))
+
+    streamlit_app._search_page()
+
+    assert rendered == [previous]
+    assert any(call[0] == "error" and "bad search" in call[1] for call in fake.calls)
+
+
+
+def test_cached_subjects_impl_uses_data_directory(monkeypatch, tmp_path):
+    called = []
+    monkeypatch.setattr(
+        streamlit_app,
+        "get_school_subject_results",
+        lambda path, urn: called.append((path, urn)) or ("subject",),
+    )
+    assert streamlit_app._cached_subjects_impl(str(tmp_path), "100001") == ("subject",)
+    assert called == [(tmp_path, "100001")]
+
+
+def test_school_card_view_details_selects_school_and_switches(monkeypatch):
+    fake = FakeStreamlit({"View details": True})
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    school = _school()
+    result = _result(schools=[school])
+    detail_page = object()
+
+    streamlit_app._render_school_card(1, school, result, detail_page)
+
+    assert fake.session_state[SELECTED_SCHOOL_URN_KEY] == "100001"
+    assert ("switch_page", detail_page) in fake.calls
+
+
+def test_render_detail_table_handles_rows_and_empty(monkeypatch):
+    fake = FakeStreamlit()
+    monkeypatch.setattr(streamlit_app, "st", fake)
+
+    streamlit_app._render_detail_table([{"A": "B"}], "Nothing here")
+    streamlit_app._render_detail_table([], "Nothing here")
+
+    assert any(call[0] == "dataframe" and call[1] == ("A",) for call in fake.calls)
+    assert any(call[0] == "info" and call[1] == "Nothing here" for call in fake.calls)
+
+
+def test_render_overview_and_academics_show_sources_and_years(monkeypatch):
+    fake = FakeStreamlit()
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    school = _school()
+    academics = replace(
+        school.academics,
+        data_year="2024/25",
+        progress8_year="2023/24",
+    )
+    school = replace(school, academics=academics)
+
+    streamlit_app._render_overview(school)
+    streamlit_app._render_academics(school, ())
+
+    assert any(call[0] == "markdown" and "School website" in call[1] for call in fake.calls)
+    assert any(call[0] == "caption" and "Performance data: 2024/25" in call[1] for call in fake.calls)
+    assert any(call[0] == "caption" and "Progress 8" in call[1] and "2023/24" in call[1] for call in fake.calls)
+
+    fake = FakeStreamlit()
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    no_website = replace(school, identity=replace(school.identity, website=None))
+    streamlit_app._render_overview(no_website)
+    assert not any(call[0] == "markdown" and "School website" in call[1] for call in fake.calls)
+
+
+def test_render_subjects_handles_success_and_failure(monkeypatch, tmp_path):
+    fake = FakeStreamlit()
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    monkeypatch.setenv("SCHOOL_FINDER_DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(
+        streamlit_app,
+        "_cached_subjects",
+        lambda data_dir, urn: (
+            SubjectResult(urn, data_year="2024/25", subject="Maths", entries=100),
+        ),
+    )
+    streamlit_app._render_subjects(_school())
+    assert any(call[0] == "dataframe" and "Subject" in call[1] for call in fake.calls)
+
+    fake = FakeStreamlit()
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    monkeypatch.setattr(
+        streamlit_app,
+        "_cached_subjects",
+        lambda *args: (_ for _ in ()).throw(ValueError("subject failure")),
+    )
+    streamlit_app._render_subjects(_school())
+    assert any(call[0] == "warning" and "subject failure" in call[1] for call in fake.calls)
+
+
+def test_render_ofsted_explains_equivalents_and_linked_source(monkeypatch):
+    fake = FakeStreamlit()
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    school = _school()
+    derived = replace(
+        school,
+        inspection=InspectionSummary(
+            equivalent_rating="Good",
+            source_school_name="Predecessor School",
+            source_urn="999999",
+        ),
+    )
+    streamlit_app._render_ofsted(derived)
+    assert any(call[0] == "info" and "No official overall" in call[1] for call in fake.calls)
+    assert any(call[0] == "caption" and "Predecessor School" in call[1] and "999999" in call[1] for call in fake.calls)
+
+    fake = FakeStreamlit()
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    different = replace(
+        school,
+        inspection=InspectionSummary(
+            rating="Requires improvement",
+            equivalent_rating="Good",
+            equivalent_explanation="Derived explanation",
+            source_school_name="Predecessor School",
+        ),
+    )
+    streamlit_app._render_ofsted(different)
+    assert any(call[0] == "caption" and "shown separately" in call[1] for call in fake.calls)
+    assert any(call[0] == "caption" and "Predecessor School" in call[1] for call in fake.calls)
+
+    fake = FakeStreamlit()
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    explained = replace(
+        school,
+        inspection=InspectionSummary(equivalent_rating="Good", equivalent_explanation="My explanation"),
+    )
+    streamlit_app._render_ofsted(explained)
+    assert ("info", "My explanation") in fake.calls
+
+
+def test_render_pastoral_staffing_and_destinations_show_metadata(monkeypatch):
+    fake = FakeStreamlit()
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    school = _school()
+    school = replace(
+        school,
+        pastoral=replace(
+            school.pastoral,
+            survey_year="2025",
+            source_url="https://example.com/parent-view",
+        ),
+        attendance=replace(school.attendance, data_year="2024/25"),
+        behaviour=replace(school.behaviour, data_year="2024/25"),
+        workforce=replace(school.workforce, data_year="2024/25"),
+        destinations=DestinationStatistics(
+            destination_year="2024/25",
+            leaver_year="2022/23",
+            sustained_destination_pct=94,
+        ),
+    )
+
+    streamlit_app._render_pastoral_behaviour(school, ())
+    streamlit_app._render_staffing(school, ())
+    streamlit_app._render_destinations(school, ())
+
+    captions = [call[1] for call in fake.calls if call[0] == "caption"]
+    assert any("Parent View survey year: 2025" in value for value in captions)
+    assert any("Attendance data: 2024/25" in value for value in captions)
+    assert any("Behaviour data: 2024/25" in value for value in captions)
+    assert any("Workforce data: 2024/25" in value for value in captions)
+    assert any("Destination data: 2024/25 for 2022/23 leavers" in value for value in captions)
+    assert any(call[0] == "markdown" and "Parent View source" in call[1] for call in fake.calls)
+
+    fake = FakeStreamlit()
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    no_leaver = replace(
+        school,
+        destinations=replace(school.destinations, leaver_year=None),
+    )
+    streamlit_app._render_destinations(no_leaver, ())
+    assert any(call[0] == "caption" and call[1] == "Destination data: 2024/25" for call in fake.calls)
+
+
+def test_detail_page_without_selection_can_return_to_search(monkeypatch):
+    search_page = object()
+    fake = FakeStreamlit({"← Back to find schools": True})
+    monkeypatch.setattr(streamlit_app, "st", fake)
+
+    streamlit_app._detail_page(search_page)
+
+    assert ("title", "School detail") in fake.calls
+    assert any(call[0] == "info" and "Choose a school" in call[1] for call in fake.calls)
+    assert any(call[0] == "caption" and "latest successful search" in call[1] for call in fake.calls)
+    assert ("switch_page", search_page) in fake.calls
+
+
+def test_detail_page_with_selected_school_renders_every_section(monkeypatch):
+    search_page = object()
+    fake = FakeStreamlit({"← Back to results": True})
+    school = _school(coverage=80)
+    school = replace(
+        school,
+        academics=replace(school.academics, data_year="2024/25"),
+        destinations=DestinationStatistics(destination_year="2024/25", sustained_destination_pct=94),
+    )
+    england = SchoolBenchmarks(
+        label="England",
+        level="National",
+        code="E92000001",
+        academics=AcademicPerformance(attainment8=47),
+    )
+    result = _result(schools=[school], benchmarks=[_benchmark(), england])
+    fake.session_state[LATEST_SEARCH_KEY] = result
+    fake.session_state[SELECTED_SCHOOL_URN_KEY] = school.identity.urn
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    monkeypatch.setattr(streamlit_app, "_cached_subjects", lambda *args: ())
+
+    streamlit_app._detail_page(search_page)
+
+    assert ("switch_page", search_page) in fake.calls
+    assert ("title", "Example School") in fake.calls
+    assert any(call[0] == "caption" and "80%" in call[1] for call in fake.calls)
+    assert any(call[0] == "caption" and "Benchmark columns" in call[1] for call in fake.calls)
+    tabs = next(call for call in fake.calls if call[0] == "tabs")
+    assert tabs[1] == (
+        "Overview",
+        "Academics",
+        "Subjects",
+        "Ofsted",
+        "Pastoral & behaviour",
+        "Staffing",
+        "Destinations",
+    )
+
+
+def test_detail_page_handles_stale_selection_without_no_search_caption(monkeypatch):
+    fake = FakeStreamlit()
+    fake.session_state[LATEST_SEARCH_KEY] = _result(schools=[_school()])
+    fake.session_state[SELECTED_SCHOOL_URN_KEY] = "missing"
+    monkeypatch.setattr(streamlit_app, "st", fake)
+
+    streamlit_app._detail_page()
+
+    assert any(call[0] == "info" and "Choose a school" in call[1] for call in fake.calls)
+    assert not any(call[0] == "caption" and "latest successful search" in call[1] for call in fake.calls)
+
+
+def test_detail_renderers_cover_missing_optional_metadata(monkeypatch):
+    fake = FakeStreamlit()
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    school = _school(score=None)
+    school = replace(
+        school,
+        academics=replace(school.academics, data_year=None, progress8_year=None),
+        inspection=InspectionSummary(rating="Good", equivalent_rating="Good"),
+        pastoral=replace(school.pastoral, score=72, response_count=None, survey_year=None, source_url=None),
+        attendance=replace(school.attendance, data_year=None),
+        behaviour=replace(school.behaviour, data_year=None),
+        workforce=replace(school.workforce, data_year=None),
+        destinations=DestinationStatistics(sustained_destination_pct=94),
+    )
+
+    streamlit_app._render_academics(school, ())
+    streamlit_app._render_ofsted(school)
+    streamlit_app._render_pastoral_behaviour(school, ())
+    streamlit_app._render_staffing(school, ())
+    streamlit_app._render_destinations(school, ())
+
+    assert not any(call[0] == "caption" and "Performance data:" in call[1] for call in fake.calls)
+    assert not any(call[0] == "info" and "official overall" in call[1] for call in fake.calls)
+
+
+def test_detail_page_without_optional_score_benchmarks_or_back_page(monkeypatch):
+    fake = FakeStreamlit()
+    school = _school(score=None)
+    result = _result(schools=[school], benchmarks=[])
+    fake.session_state[LATEST_SEARCH_KEY] = result
+    fake.session_state[SELECTED_SCHOOL_URN_KEY] = school.identity.urn
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    monkeypatch.setattr(streamlit_app, "_cached_subjects", lambda *args: ())
+
+    streamlit_app._detail_page()
+
+    assert ("title", "Example School") in fake.calls
+    assert not any(call[0] == "switch_page" for call in fake.calls)
+    assert not any(call[0] == "caption" and "Benchmark columns" in call[1] for call in fake.calls)
+    assert not any(call[0] == "caption" and "requested preference data" in call[1] for call in fake.calls)
+
+
+def _trend_history():
+    import pandas as pd
+
+    rows = []
+    for year, school, local, national in (
+        ("202223", 48.0, 47.0, 46.0),
+        ("202324", 50.0, 48.0, 47.0),
+        ("202425", 52.0, 49.0, 48.0),
+        ("202526", 53.0, 50.0, 49.0),
+    ):
+        rows.extend(
+            [
+                {"domain": "academics", "year": year, "metric": "attainment8", "series": "School", "value": school, "source_urn": "100001", "source_school_name": "Example School", "source_kind": "current", "source_link_depth": 0},
+                {"domain": "academics", "year": year, "metric": "attainment8", "series": "Hampshire", "value": local, "source_urn": None, "source_school_name": None, "source_kind": None, "source_link_depth": None},
+                {"domain": "academics", "year": year, "metric": "attainment8", "series": "England", "value": national, "source_urn": None, "source_school_name": None, "source_kind": None, "source_link_depth": None},
+            ]
+        )
+    rows[0]["source_kind"] = "predecessor"
+    rows[0]["source_school_name"] = "Old School"
+    return pd.DataFrame(rows)
+
+
+def test_render_trends_charts_metric_period_benchmarks_and_lineage(monkeypatch):
+    fake = FakeStreamlit()
+    monkeypatch.setattr(streamlit_app, "st", fake)
+
+    streamlit_app._render_trends(_trend_history(), "academics")
+
+    charts = [call for call in fake.calls if call[0] == "line_chart"]
+    assert len(charts) == 1
+    assert charts[0][1] == ("Year", "School", "England", "Hampshire")
+    assert charts[0][2]["width"] == "stretch"
+    captions = [call[1] for call in fake.calls if call[0] == "caption"]
+    assert any("local-authority and England" in caption for caption in captions)
+    assert any("predecessor school: Old School" in caption for caption in captions)
+
+
+def test_render_trends_handles_error_empty_and_insufficient_history(monkeypatch):
+    import pandas as pd
+
+    fake = FakeStreamlit()
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    streamlit_app._render_trends(None, "academics", error="broken")
+    streamlit_app._render_trends(pd.DataFrame(), "academics")
+    streamlit_app._render_trends(
+        pd.DataFrame(
+            [
+                {"domain": "academics", "year": "202425", "metric": "attainment8", "series": "School", "value": 52.0, "source_kind": "current", "source_school_name": "Example"}
+            ]
+        ),
+        "academics",
+    )
+
+    captions = [call[1] for call in fake.calls if call[0] == "caption"]
+    assert "Trend data unavailable: broken" in captions
+    assert "No historical data is currently available for this area." in captions
+    assert "There are not yet two comparable published years for this area." in captions
+    assert not any(call[0] == "line_chart" for call in fake.calls)
+
+
+def test_detail_page_loads_history_once_and_uses_it_for_trend_tabs(monkeypatch):
+    fake = FakeStreamlit()
+    school = _school()
+    result = _result(schools=[school], benchmarks=[_benchmark()])
+    fake.session_state[LATEST_SEARCH_KEY] = result
+    fake.session_state[SELECTED_SCHOOL_URN_KEY] = school.identity.urn
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    monkeypatch.setattr(streamlit_app, "_cached_subjects", lambda *args: ())
+    calls = []
+    monkeypatch.setattr(
+        streamlit_app,
+        "_cached_history",
+        lambda data_dir, urn, la: calls.append((data_dir, urn, la)) or _trend_history(),
+    )
+
+    streamlit_app._detail_page()
+
+    assert len(calls) == 1
+    assert calls[0][1:] == ("100001", "E10000014")
+    assert any(call[0] == "line_chart" for call in fake.calls)
+
+
+def test_detail_page_degrades_when_history_lookup_fails(monkeypatch):
+    fake = FakeStreamlit()
+    school = _school()
+    result = _result(schools=[school], benchmarks=[_benchmark()])
+    fake.session_state[LATEST_SEARCH_KEY] = result
+    fake.session_state[SELECTED_SCHOOL_URN_KEY] = school.identity.urn
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    monkeypatch.setattr(streamlit_app, "_cached_subjects", lambda *args: ())
+    monkeypatch.setattr(
+        streamlit_app,
+        "_cached_history",
+        lambda *args: (_ for _ in ()).throw(ValueError("history failed")),
+    )
+
+    streamlit_app._detail_page()
+
+    assert any(
+        call[0] == "caption" and "Trend data unavailable: history failed" in call[1]
+        for call in fake.calls
+    )
+
+
+def test_render_trends_two_year_school_only_series_skips_period_and_benchmark_caption(monkeypatch):
+    import pandas as pd
+
+    history = pd.DataFrame(
+        [
+            {"domain": "academics", "year": "202324", "metric": "pupil_count", "series": "School", "value": 170, "source_urn": "100001", "source_school_name": "Example School", "source_kind": "current", "source_link_depth": 0},
+            {"domain": "academics", "year": "202425", "metric": "pupil_count", "series": "School", "value": 180, "source_urn": "100001", "source_school_name": "Example School", "source_kind": "current", "source_link_depth": 0},
+        ]
+    )
+    fake = FakeStreamlit(answers={"Metric": "pupil_count"})
+    monkeypatch.setattr(streamlit_app, "st", fake)
+
+    streamlit_app._render_trends(history, "academics")
+
+    assert not any(call[0] == "selectbox" and call[1] == "Period" for call in fake.calls)
+    assert any(call[0] == "line_chart" for call in fake.calls)
+    assert not any(
+        call[0] == "caption" and "local-authority and England" in call[1]
+        for call in fake.calls
+    )
+    assert not any(
+        call[0] == "caption" and "predecessor" in call[1]
+        for call in fake.calls
+    )
+
+
+def test_render_trends_handles_selected_metric_with_less_than_two_chart_rows(monkeypatch):
+    import pandas as pd
+
+    history = pd.DataFrame(
+        [
+            {"domain": "academics", "year": "202324", "metric": "attainment8", "series": "School", "value": 50.0, "source_kind": "current", "source_school_name": "Example"},
+            {"domain": "academics", "year": "202425", "metric": "attainment8", "series": "School", "value": 52.0, "source_kind": "current", "source_school_name": "Example"},
+        ]
+    )
+    fake = FakeStreamlit()
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    one_row = pd.DataFrame({"Year": ["2024/25"], "School": [52.0]})
+    monkeypatch.setattr(streamlit_app, "trend_frame", lambda *args, **kwargs: one_row)
+
+    streamlit_app._render_trends(history, "academics")
+
+    assert any(
+        call[0] == "caption" and "not yet two comparable published years for this metric" in call[1]
+        for call in fake.calls
+    )
+    assert not any(call[0] == "line_chart" for call in fake.calls)
+
+
+def test_school_card_adds_removes_and_warns_at_compare_limit(monkeypatch):
+    from school_finder.ui.state import COMPARE_URNS_KEY
+
+    school = _school()
+    result = _result(schools=[school])
+
+    fake = FakeStreamlit({"Add to compare": True})
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    streamlit_app._render_school_card(1, school, result)
+    assert fake.session_state[COMPARE_URNS_KEY] == ["100001"]
+
+    fake = FakeStreamlit({"Remove from compare": True})
+    fake.session_state[COMPARE_URNS_KEY] = ["100001"]
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    streamlit_app._render_school_card(1, school, result)
+    assert COMPARE_URNS_KEY not in fake.session_state
+
+    fake = FakeStreamlit({"Add to compare": True})
+    fake.session_state[COMPARE_URNS_KEY] = ["1", "2", "3", "4"]
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    streamlit_app._render_school_card(1, school, result)
+    assert any(call[0] == "warning" and "up to 4" in call[1] for call in fake.calls)
+
+
+def test_school_card_can_select_four_schools_sequentially(monkeypatch):
+    from dataclasses import replace
+    from school_finder.ui.state import COMPARE_URNS_KEY
+
+    first = _school()
+    schools = [
+        replace(
+            first,
+            identity=replace(
+                first.identity,
+                urn=f"10000{index}",
+                name=f"School {index}",
+            ),
+        )
+        for index in range(1, 5)
+    ]
+    result = _result(schools=schools)
+    fake = FakeStreamlit({"Add to compare": True})
+    monkeypatch.setattr(streamlit_app, "st", fake)
+
+    for index, school in enumerate(schools, start=1):
+        streamlit_app._render_school_card(index, school, result)
+
+    assert fake.session_state[COMPARE_URNS_KEY] == [
+        "100001",
+        "100002",
+        "100003",
+        "100004",
+    ]
+    assert len([call for call in fake.calls if call == ("rerun",)]) == 4
+
+
+def test_render_results_compare_selection_prompt_and_navigation(monkeypatch):
+    from school_finder.ui.state import COMPARE_URNS_KEY
+
+    school = _school()
+    result = _result(schools=[school])
+    monkeypatch.setattr(streamlit_app, "_render_school_card", lambda *args, **kwargs: None)
+
+    fake = FakeStreamlit()
+    fake.session_state[COMPARE_URNS_KEY] = ["100001"]
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    streamlit_app._render_results(result, compare_page=object())
+    assert any(call[0] == "caption" and "Select at least 2" in call[1] for call in fake.calls)
+
+    compare_page = object()
+    fake = FakeStreamlit({"Compare selected (2)": True})
+    fake.session_state[COMPARE_URNS_KEY] = ["100001", "100002"]
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    streamlit_app._render_results(result, compare_page=compare_page)
+    assert ("switch_page", compare_page) in fake.calls
+
+
+def test_detail_compare_actions_add_remove_open_and_limit(monkeypatch):
+    from school_finder.ui.state import COMPARE_URNS_KEY, LATEST_SEARCH_KEY, SELECTED_SCHOOL_URN_KEY
+
+    school = _school()
+    result = _result(schools=[school])
+    compare_page = object()
+
+    def prepare(fake):
+        fake.session_state[LATEST_SEARCH_KEY] = result
+        fake.session_state[SELECTED_SCHOOL_URN_KEY] = "100001"
+        monkeypatch.setattr(streamlit_app, "st", fake)
+        monkeypatch.setattr(streamlit_app, "_cached_history", lambda *args: None)
+        monkeypatch.setattr(streamlit_app, "_render_overview", lambda *args: None)
+        monkeypatch.setattr(streamlit_app, "_render_academics", lambda *args: None)
+        monkeypatch.setattr(streamlit_app, "_render_subjects", lambda *args: None)
+        monkeypatch.setattr(streamlit_app, "_render_ofsted", lambda *args: None)
+        monkeypatch.setattr(streamlit_app, "_render_pastoral_behaviour", lambda *args: None)
+        monkeypatch.setattr(streamlit_app, "_render_staffing", lambda *args: None)
+        monkeypatch.setattr(streamlit_app, "_render_destinations", lambda *args: None)
+
+    fake = FakeStreamlit({"Add to compare": True})
+    prepare(fake)
+    streamlit_app._detail_page(compare_page=compare_page)
+    assert fake.session_state[COMPARE_URNS_KEY] == ["100001"]
+
+    fake = FakeStreamlit({"Remove from compare": True})
+    prepare(fake)
+    fake.session_state[COMPARE_URNS_KEY] = ["100001"]
+    streamlit_app._detail_page(compare_page=compare_page)
+    assert COMPARE_URNS_KEY not in fake.session_state
+
+    fake = FakeStreamlit({"Compare selected": True})
+    prepare(fake)
+    fake.session_state[COMPARE_URNS_KEY] = ["100001", "100002"]
+    streamlit_app._detail_page(compare_page=compare_page)
+    assert ("switch_page", compare_page) in fake.calls
+
+    fake = FakeStreamlit({"Add to compare": True})
+    prepare(fake)
+    fake.session_state[COMPARE_URNS_KEY] = ["1", "2", "3", "4"]
+    streamlit_app._detail_page(compare_page=compare_page)
+    assert any(call[0] == "warning" and "up to 4" in call[1] for call in fake.calls)
+
+
+def test_compare_page_empty_and_insufficient_selection(monkeypatch):
+    from school_finder.ui.state import COMPARE_URNS_KEY, LATEST_SEARCH_KEY
+
+    search_page = object()
+    fake = FakeStreamlit({"← Find schools": True})
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    streamlit_app._compare_page(search_page=search_page)
+    assert ("switch_page", search_page) in fake.calls
+
+    fake = FakeStreamlit({"← Back to results": True})
+    fake.session_state[LATEST_SEARCH_KEY] = _result(schools=[_school()])
+    fake.session_state[COMPARE_URNS_KEY] = ["100001"]
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    streamlit_app._compare_page(search_page=search_page)
+    assert ("switch_page", search_page) in fake.calls
+
+
+def test_compare_page_renders_opens_details_removes_and_navigates(monkeypatch):
+    from dataclasses import replace
+    from school_finder.ui.state import COMPARE_URNS_KEY, LATEST_SEARCH_KEY, SELECTED_SCHOOL_URN_KEY
+
+    first = _school()
+    second = replace(first, identity=replace(first.identity, urn="100002", name="Second School"))
+    result = _result(schools=[first, second])
+    search_page = object()
+    detail_page = object()
+
+    fake = FakeStreamlit({"View details": True})
+    fake.session_state[LATEST_SEARCH_KEY] = result
+    fake.session_state[COMPARE_URNS_KEY] = ["100001", "100002"]
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    streamlit_app._compare_page(search_page=search_page, detail_page=detail_page)
+    assert fake.session_state[SELECTED_SCHOOL_URN_KEY] in {"100001", "100002"}
+    assert ("switch_page", detail_page) in fake.calls
+    assert len([call for call in fake.calls if call[0] == "dataframe"]) == len(streamlit_app.COMPARISON_SECTIONS)
+
+    fake = FakeStreamlit({"Remove": True})
+    fake.session_state[LATEST_SEARCH_KEY] = result
+    fake.session_state[COMPARE_URNS_KEY] = ["100001", "100002"]
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    streamlit_app._compare_page()
+    assert streamlit_app.get_compare_urns(fake.session_state) == ()
+
+    fake = FakeStreamlit({"← Back to results": True})
+    fake.session_state[LATEST_SEARCH_KEY] = result
+    fake.session_state[COMPARE_URNS_KEY] = ["100001", "100002"]
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    streamlit_app._compare_page(search_page=search_page)
+    assert ("switch_page", search_page) in fake.calls
+
+    fake = FakeStreamlit({"Clear comparison": True})
+    fake.session_state[LATEST_SEARCH_KEY] = result
+    fake.session_state[COMPARE_URNS_KEY] = ["100001", "100002"]
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    streamlit_app._compare_page(search_page=search_page)
+    assert streamlit_app.get_compare_urns(fake.session_state) == ()
+    assert ("switch_page", search_page) in fake.calls
+
+    fake = FakeStreamlit({"Clear comparison": True})
+    fake.session_state[LATEST_SEARCH_KEY] = result
+    fake.session_state[COMPARE_URNS_KEY] = ["100001", "100002"]
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    streamlit_app._compare_page()
+    assert streamlit_app.get_compare_urns(fake.session_state) == ()
+
+
+def test_compare_navigation_buttons_can_be_left_unpressed(monkeypatch):
+    from dataclasses import replace
+    from school_finder.ui.state import COMPARE_URNS_KEY, LATEST_SEARCH_KEY
+
+    first = _school()
+    second = replace(first, identity=replace(first.identity, urn="100002", name="Second School"))
+    result = _result(schools=[first, second])
+    search_page = object()
+    compare_page = object()
+
+    fake = FakeStreamlit()
+    fake.session_state[COMPARE_URNS_KEY] = ["100001", "100002"]
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    monkeypatch.setattr(streamlit_app, "_render_school_card", lambda *args, **kwargs: None)
+    streamlit_app._render_results(result, compare_page=compare_page)
+    assert ("switch_page", compare_page) not in fake.calls
+
+    fake = FakeStreamlit()
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    streamlit_app._compare_page(search_page=search_page)
+    assert ("switch_page", search_page) not in fake.calls
+
+    fake = FakeStreamlit()
+    fake.session_state[LATEST_SEARCH_KEY] = result
+    fake.session_state[COMPARE_URNS_KEY] = ["100001"]
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    streamlit_app._compare_page(search_page=search_page)
+    assert ("switch_page", search_page) not in fake.calls

@@ -198,3 +198,56 @@ def test_destination_headline_requires_time_period(tmp_path: Path):
     pd.DataFrame([{"school_urn": "1", "overall": "90"}]).to_csv(path, index=False)
     with pytest.raises(SchoolFinderError, match="missing time_period"):
         destinations.read_destination_school(path)
+
+
+def test_destination_history_keeps_multiple_school_and_benchmark_cohorts(tmp_path: Path):
+    school_path = tmp_path / "destination-history.csv"
+    pd.DataFrame([
+        _row(time_period="202122", overall="89.0"),
+        _row(time_period="202223", overall="91.2"),
+    ]).to_csv(school_path, index=False)
+
+    school = destinations.read_destination_school_history(school_path)
+    assert school["destination_leaver_year"].tolist() == ["202122", "202223"]
+    assert school["sustained_destination_pct"].tolist() == [89.0, 91.2]
+
+    national = tmp_path / "destination-national-history.csv"
+    local = tmp_path / "destination-local-history.csv"
+    pd.DataFrame([
+        _row(
+            time_period="202122",
+            geographic_level="National",
+            school_urn="",
+            new_la_code="",
+            la_name="",
+            overall="90.0",
+        ),
+        _row(
+            time_period="202223",
+            geographic_level="National",
+            school_urn="",
+            new_la_code="",
+            la_name="",
+            overall="92.0",
+        ),
+    ]).to_csv(national, index=False)
+    pd.DataFrame([
+        _row(
+            time_period="202122",
+            geographic_level="Local authority",
+            school_urn="",
+            overall="91.0",
+        ),
+        _row(
+            time_period="202223",
+            geographic_level="Local authority",
+            school_urn="",
+            overall="93.0",
+        ),
+    ]).to_csv(local, index=False)
+
+    benchmarks = destinations.read_destination_benchmark_history(national, local)
+    england = benchmarks[benchmarks["benchmark_level"].eq("National")]
+    hampshire = benchmarks[benchmarks["benchmark_level"].eq("Local authority")]
+    assert england["destination_leaver_year"].tolist() == ["202122", "202223"]
+    assert hampshire["destination_leaver_year"].tolist() == ["202122", "202223"]

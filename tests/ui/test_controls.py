@@ -59,7 +59,7 @@ def test_build_preferences_rejects_all_zero_custom_weights():
 
 def test_build_search_request_maps_all_ui_controls():
     request = build_search_request(
-        postcode="RG22 6SX",
+        postcode="SW1A 2AA",
         radius_miles=5,
         limit=12,
         phases=(SchoolPhase.SECONDARY,),
@@ -78,7 +78,7 @@ def test_build_search_request_maps_all_ui_controls():
         sort_field=SchoolSortField.PASTORAL_CARE,
         descending=True,
     )
-    assert request.postcode == "RG22 6SX"
+    assert request.postcode == "SW1A 2AA"
     assert request.radius_miles == 5
     assert request.limit == 12
     assert request.phases == (SchoolPhase.SECONDARY,)
@@ -101,7 +101,7 @@ def test_build_search_request_maps_all_ui_controls():
 
 def test_build_search_request_supports_sort_only():
     request = build_search_request(
-        postcode="RG22 6SX",
+        postcode="SW1A 2AA",
         radius_miles=3,
         limit=5,
         preset=None,

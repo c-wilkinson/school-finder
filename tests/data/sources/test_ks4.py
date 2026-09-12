@@ -139,3 +139,36 @@ def test_read_ks4_quality_handles_progress_column_with_no_numeric_values(tmp_pat
     }]).to_csv(path, index=False)
     row = ks4.read_ks4_quality(path).iloc[0]
     assert pd.isna(row["progress8"])
+
+
+def test_read_ks4_history_returns_all_headline_years(tmp_path: Path):
+    path = tmp_path / "ks4-history.csv"
+    pd.DataFrame([
+        {
+            "school_urn": "100001",
+            "time_period": "202324",
+            "breakdown": "Total",
+            "attainment8_average": "48.0",
+            "progress8_average": "0.1",
+        },
+        {
+            "school_urn": "100001",
+            "time_period": "202425",
+            "breakdown": "Total",
+            "attainment8_average": "52.0",
+            "progress8_average": "z",
+        },
+        {
+            "school_urn": "100001",
+            "time_period": "202425",
+            "breakdown": "Girls",
+            "attainment8_average": "99",
+        },
+    ]).to_csv(path, index=False)
+
+    result = ks4.read_ks4_history(path)
+
+    assert result["performance_year"].tolist() == ["202324", "202425"]
+    assert result["attainment8"].tolist() == [48.0, 52.0]
+    assert result.iloc[0]["progress8"] == 0.1
+    assert pd.isna(result.iloc[1]["progress8"])

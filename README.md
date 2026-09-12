@@ -47,6 +47,16 @@ school-finder build
 school-finder lookup "SW1A 2AA"
 ```
 
+### Streamlit web app
+
+Install the optional web dependency and start the app:
+
+```bash
+python -m pip install -e ".[web]"
+school-finder build
+python -m streamlit run streamlit_app.py
+```
+
 ### Output formats
 
 Human-readable output is the default:

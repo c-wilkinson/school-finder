@@ -211,3 +211,65 @@ def test_workforce_benchmark_validation(tmp_path: Path):
     pd.DataFrame([_benchmark(time_period="bad")]).to_csv(bad_time, index=False)
     with pytest.raises(SchoolFinderError, match="no valid time periods"):
         workforce.read_workforce_benchmarks(bad_time, ratio)
+
+
+def test_workforce_history_keeps_multiple_school_and_benchmark_years(tmp_path: Path):
+    size = tmp_path / "size-history.csv"
+    ratio = tmp_path / "ratio-history.csv"
+    pd.DataFrame([
+        _size_school(time_period="202425", fte_all_teachers="58"),
+        _size_school(time_period="202526", fte_all_teachers="60"),
+    ]).to_csv(size, index=False)
+    pd.DataFrame([
+        _ratio_school(time_period="202425", pupil_to_qual_unqual_teacher_ratio="17.1"),
+        _ratio_school(time_period="202526", pupil_to_qual_unqual_teacher_ratio="16.7"),
+    ]).to_csv(ratio, index=False)
+
+    school = workforce.read_workforce_school_history(size, ratio)
+    assert school["history_year"].tolist() == ["202425", "202526"]
+    assert school["teacher_fte"].tolist() == [58, 60]
+    assert school["pupil_teacher_ratio"].tolist() == [17.1, 16.7]
+
+    size_bench = tmp_path / "size-benchmark-history.csv"
+    ratio_bench = tmp_path / "ratio-benchmark-history.csv"
+    rows = [
+        _benchmark(time_period="202425", fte_all_teachers="58", pupil_to_qual_unqual_teacher_ratio="17.1"),
+        _benchmark(time_period="202526", fte_all_teachers="60", pupil_to_qual_unqual_teacher_ratio="16.7"),
+        _benchmark(
+            time_period="202425",
+            geographic_level="Local authority",
+            new_la_code="E10000014",
+            la_name="Hampshire",
+            fte_all_teachers="55",
+            pupil_to_qual_unqual_teacher_ratio="16.9",
+        ),
+        _benchmark(
+            time_period="202526",
+            geographic_level="Local authority",
+            new_la_code="E10000014",
+            la_name="Hampshire",
+            fte_all_teachers="56",
+            pupil_to_qual_unqual_teacher_ratio="16.4",
+        ),
+    ]
+    size_columns = [
+        "time_period", "geographic_level", "country_code", "country_name",
+        "new_la_code", "la_name", "establishment_type_group",
+        "fte_all_teachers", "fte_classroom_teachers", "fte_teaching_assistants",
+        "fte_all_support_staff", "fte_all_teachers_without_qts", "percent_pt_teacher",
+    ]
+    ratio_columns = [
+        "time_period", "geographic_level", "country_code", "country_name",
+        "new_la_code", "la_name", "establishment_type_group",
+        "pupils_fte", "qualified_teachers_fte", "pupil_to_qual_teacher_ratio",
+        "pupil_to_qual_unqual_teacher_ratio", "pupil_to_adult_ratio",
+    ]
+    pd.DataFrame(rows)[size_columns].to_csv(size_bench, index=False)
+    pd.DataFrame(rows)[ratio_columns].to_csv(ratio_bench, index=False)
+
+    benchmarks = workforce.read_workforce_benchmark_history(size_bench, ratio_bench)
+    england = benchmarks[benchmarks["benchmark_code"].eq("E92000001")]
+    hampshire = benchmarks[benchmarks["benchmark_code"].eq("E10000014")]
+    assert england["history_year"].tolist() == ["202425", "202526"]
+    assert hampshire["history_year"].tolist() == ["202425", "202526"]
+    assert hampshire["pupil_teacher_ratio"].tolist() == [16.9, 16.4]
