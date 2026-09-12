@@ -48,6 +48,9 @@ class FakeColumn:
     def metric(self, label, value, **kwargs):
         self.parent.calls.append(("metric", label, value, kwargs))
 
+    def button(self, label, **kwargs):
+        return self.parent.button(label, **kwargs)
+
 
 class FakePage:
     def __init__(self, parent, page, **kwargs):
@@ -165,6 +168,9 @@ class FakeStreamlit:
 
     def switch_page(self, page):
         self.calls.append(("switch_page", page))
+
+    def rerun(self):
+        self.calls.append(("rerun",))
 
     def tabs(self, labels):
         self.calls.append(("tabs", tuple(labels)))
@@ -428,7 +434,7 @@ def test_render_results_renders_cards_and_benchmarks(monkeypatch):
     fake = FakeStreamlit()
     monkeypatch.setattr(streamlit_app, "st", fake)
     rendered = []
-    monkeypatch.setattr(streamlit_app, "_render_school_card", lambda i, school, result, detail_page=None: rendered.append((i, school)))
+    monkeypatch.setattr(streamlit_app, "_render_school_card", lambda i, school, result, detail_page=None, compare_page=None: rendered.append((i, school)))
     result = _result(schools=[_school(), _school()], benchmarks=[_benchmark()])
     streamlit_app._render_results(result)
     assert [item[0] for item in rendered] == [1, 2]
@@ -529,7 +535,7 @@ def test_main_runs_search_and_renders_results(monkeypatch, tmp_path):
     searched = []
     monkeypatch.setattr(streamlit_app, "_cached_search", lambda data_dir, req: searched.append((data_dir, req)) or expected)
     rendered = []
-    monkeypatch.setattr(streamlit_app, "_render_results", lambda result, detail_page=None: rendered.append(result))
+    monkeypatch.setattr(streamlit_app, "_render_results", lambda result, detail_page=None, compare_page=None: rendered.append(result))
     streamlit_app.main()
     assert searched == [(str(tmp_path), request)]
     assert rendered == [expected]
@@ -566,13 +572,21 @@ def test_main_uses_page_navigation_shell(monkeypatch):
         (
             "Page",
             {
+                "title": "Compare schools",
+                "icon": "⚖️",
+                "url_path": "compare-schools",
+            },
+        ),
+        (
+            "Page",
+            {
                 "title": "School detail",
                 "icon": "🏫",
                 "url_path": "school-detail",
             },
         ),
     ]
-    assert ("navigation", 2, {}) in fake.calls
+    assert ("navigation", 3, {}) in fake.calls
     assert any(call[0] == "page_run" for call in fake.calls)
 
 
@@ -583,7 +597,7 @@ def test_search_page_renders_stored_result_without_resubmitting(monkeypatch):
     monkeypatch.setattr(streamlit_app, "st", fake)
     monkeypatch.setattr(streamlit_app, "_sidebar_form", lambda: (False, None))
     rendered = []
-    monkeypatch.setattr(streamlit_app, "_render_results", lambda result, detail_page=None: rendered.append(result))
+    monkeypatch.setattr(streamlit_app, "_render_results", lambda result, detail_page=None, compare_page=None: rendered.append(result))
 
     streamlit_app._search_page()
 
@@ -604,7 +618,7 @@ def test_failed_search_preserves_and_renders_previous_result(monkeypatch):
         lambda *args: (_ for _ in ()).throw(ValueError("bad search")),
     )
     rendered = []
-    monkeypatch.setattr(streamlit_app, "_render_results", lambda result, detail_page=None: rendered.append(result))
+    monkeypatch.setattr(streamlit_app, "_render_results", lambda result, detail_page=None, compare_page=None: rendered.append(result))
 
     streamlit_app._search_page()
 
@@ -1039,3 +1053,220 @@ def test_render_trends_handles_selected_metric_with_less_than_two_chart_rows(mon
         for call in fake.calls
     )
     assert not any(call[0] == "line_chart" for call in fake.calls)
+
+
+def test_school_card_adds_removes_and_warns_at_compare_limit(monkeypatch):
+    from school_finder.ui.state import COMPARE_URNS_KEY
+
+    school = _school()
+    result = _result(schools=[school])
+
+    fake = FakeStreamlit({"Add to compare": True})
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    streamlit_app._render_school_card(1, school, result)
+    assert fake.session_state[COMPARE_URNS_KEY] == ["100001"]
+
+    fake = FakeStreamlit({"Remove from compare": True})
+    fake.session_state[COMPARE_URNS_KEY] = ["100001"]
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    streamlit_app._render_school_card(1, school, result)
+    assert COMPARE_URNS_KEY not in fake.session_state
+
+    fake = FakeStreamlit({"Add to compare": True})
+    fake.session_state[COMPARE_URNS_KEY] = ["1", "2", "3", "4"]
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    streamlit_app._render_school_card(1, school, result)
+    assert any(call[0] == "warning" and "up to 4" in call[1] for call in fake.calls)
+
+
+def test_school_card_can_select_four_schools_sequentially(monkeypatch):
+    from dataclasses import replace
+    from school_finder.ui.state import COMPARE_URNS_KEY
+
+    first = _school()
+    schools = [
+        replace(
+            first,
+            identity=replace(
+                first.identity,
+                urn=f"10000{index}",
+                name=f"School {index}",
+            ),
+        )
+        for index in range(1, 5)
+    ]
+    result = _result(schools=schools)
+    fake = FakeStreamlit({"Add to compare": True})
+    monkeypatch.setattr(streamlit_app, "st", fake)
+
+    for index, school in enumerate(schools, start=1):
+        streamlit_app._render_school_card(index, school, result)
+
+    assert fake.session_state[COMPARE_URNS_KEY] == [
+        "100001",
+        "100002",
+        "100003",
+        "100004",
+    ]
+    assert len([call for call in fake.calls if call == ("rerun",)]) == 4
+
+
+def test_render_results_compare_selection_prompt_and_navigation(monkeypatch):
+    from school_finder.ui.state import COMPARE_URNS_KEY
+
+    school = _school()
+    result = _result(schools=[school])
+    monkeypatch.setattr(streamlit_app, "_render_school_card", lambda *args, **kwargs: None)
+
+    fake = FakeStreamlit()
+    fake.session_state[COMPARE_URNS_KEY] = ["100001"]
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    streamlit_app._render_results(result, compare_page=object())
+    assert any(call[0] == "caption" and "Select at least 2" in call[1] for call in fake.calls)
+
+    compare_page = object()
+    fake = FakeStreamlit({"Compare selected (2)": True})
+    fake.session_state[COMPARE_URNS_KEY] = ["100001", "100002"]
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    streamlit_app._render_results(result, compare_page=compare_page)
+    assert ("switch_page", compare_page) in fake.calls
+
+
+def test_detail_compare_actions_add_remove_open_and_limit(monkeypatch):
+    from school_finder.ui.state import COMPARE_URNS_KEY, LATEST_SEARCH_KEY, SELECTED_SCHOOL_URN_KEY
+
+    school = _school()
+    result = _result(schools=[school])
+    compare_page = object()
+
+    def prepare(fake):
+        fake.session_state[LATEST_SEARCH_KEY] = result
+        fake.session_state[SELECTED_SCHOOL_URN_KEY] = "100001"
+        monkeypatch.setattr(streamlit_app, "st", fake)
+        monkeypatch.setattr(streamlit_app, "_cached_history", lambda *args: None)
+        monkeypatch.setattr(streamlit_app, "_render_overview", lambda *args: None)
+        monkeypatch.setattr(streamlit_app, "_render_academics", lambda *args: None)
+        monkeypatch.setattr(streamlit_app, "_render_subjects", lambda *args: None)
+        monkeypatch.setattr(streamlit_app, "_render_ofsted", lambda *args: None)
+        monkeypatch.setattr(streamlit_app, "_render_pastoral_behaviour", lambda *args: None)
+        monkeypatch.setattr(streamlit_app, "_render_staffing", lambda *args: None)
+        monkeypatch.setattr(streamlit_app, "_render_destinations", lambda *args: None)
+
+    fake = FakeStreamlit({"Add to compare": True})
+    prepare(fake)
+    streamlit_app._detail_page(compare_page=compare_page)
+    assert fake.session_state[COMPARE_URNS_KEY] == ["100001"]
+
+    fake = FakeStreamlit({"Remove from compare": True})
+    prepare(fake)
+    fake.session_state[COMPARE_URNS_KEY] = ["100001"]
+    streamlit_app._detail_page(compare_page=compare_page)
+    assert COMPARE_URNS_KEY not in fake.session_state
+
+    fake = FakeStreamlit({"Compare selected": True})
+    prepare(fake)
+    fake.session_state[COMPARE_URNS_KEY] = ["100001", "100002"]
+    streamlit_app._detail_page(compare_page=compare_page)
+    assert ("switch_page", compare_page) in fake.calls
+
+    fake = FakeStreamlit({"Add to compare": True})
+    prepare(fake)
+    fake.session_state[COMPARE_URNS_KEY] = ["1", "2", "3", "4"]
+    streamlit_app._detail_page(compare_page=compare_page)
+    assert any(call[0] == "warning" and "up to 4" in call[1] for call in fake.calls)
+
+
+def test_compare_page_empty_and_insufficient_selection(monkeypatch):
+    from school_finder.ui.state import COMPARE_URNS_KEY, LATEST_SEARCH_KEY
+
+    search_page = object()
+    fake = FakeStreamlit({"← Find schools": True})
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    streamlit_app._compare_page(search_page=search_page)
+    assert ("switch_page", search_page) in fake.calls
+
+    fake = FakeStreamlit({"← Back to results": True})
+    fake.session_state[LATEST_SEARCH_KEY] = _result(schools=[_school()])
+    fake.session_state[COMPARE_URNS_KEY] = ["100001"]
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    streamlit_app._compare_page(search_page=search_page)
+    assert ("switch_page", search_page) in fake.calls
+
+
+def test_compare_page_renders_opens_details_removes_and_navigates(monkeypatch):
+    from dataclasses import replace
+    from school_finder.ui.state import COMPARE_URNS_KEY, LATEST_SEARCH_KEY, SELECTED_SCHOOL_URN_KEY
+
+    first = _school()
+    second = replace(first, identity=replace(first.identity, urn="100002", name="Second School"))
+    result = _result(schools=[first, second])
+    search_page = object()
+    detail_page = object()
+
+    fake = FakeStreamlit({"View details": True})
+    fake.session_state[LATEST_SEARCH_KEY] = result
+    fake.session_state[COMPARE_URNS_KEY] = ["100001", "100002"]
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    streamlit_app._compare_page(search_page=search_page, detail_page=detail_page)
+    assert fake.session_state[SELECTED_SCHOOL_URN_KEY] in {"100001", "100002"}
+    assert ("switch_page", detail_page) in fake.calls
+    assert len([call for call in fake.calls if call[0] == "dataframe"]) == len(streamlit_app.COMPARISON_SECTIONS)
+
+    fake = FakeStreamlit({"Remove": True})
+    fake.session_state[LATEST_SEARCH_KEY] = result
+    fake.session_state[COMPARE_URNS_KEY] = ["100001", "100002"]
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    streamlit_app._compare_page()
+    assert streamlit_app.get_compare_urns(fake.session_state) == ()
+
+    fake = FakeStreamlit({"← Back to results": True})
+    fake.session_state[LATEST_SEARCH_KEY] = result
+    fake.session_state[COMPARE_URNS_KEY] = ["100001", "100002"]
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    streamlit_app._compare_page(search_page=search_page)
+    assert ("switch_page", search_page) in fake.calls
+
+    fake = FakeStreamlit({"Clear comparison": True})
+    fake.session_state[LATEST_SEARCH_KEY] = result
+    fake.session_state[COMPARE_URNS_KEY] = ["100001", "100002"]
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    streamlit_app._compare_page(search_page=search_page)
+    assert streamlit_app.get_compare_urns(fake.session_state) == ()
+    assert ("switch_page", search_page) in fake.calls
+
+    fake = FakeStreamlit({"Clear comparison": True})
+    fake.session_state[LATEST_SEARCH_KEY] = result
+    fake.session_state[COMPARE_URNS_KEY] = ["100001", "100002"]
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    streamlit_app._compare_page()
+    assert streamlit_app.get_compare_urns(fake.session_state) == ()
+
+
+def test_compare_navigation_buttons_can_be_left_unpressed(monkeypatch):
+    from dataclasses import replace
+    from school_finder.ui.state import COMPARE_URNS_KEY, LATEST_SEARCH_KEY
+
+    first = _school()
+    second = replace(first, identity=replace(first.identity, urn="100002", name="Second School"))
+    result = _result(schools=[first, second])
+    search_page = object()
+    compare_page = object()
+
+    fake = FakeStreamlit()
+    fake.session_state[COMPARE_URNS_KEY] = ["100001", "100002"]
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    monkeypatch.setattr(streamlit_app, "_render_school_card", lambda *args, **kwargs: None)
+    streamlit_app._render_results(result, compare_page=compare_page)
+    assert ("switch_page", compare_page) not in fake.calls
+
+    fake = FakeStreamlit()
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    streamlit_app._compare_page(search_page=search_page)
+    assert ("switch_page", search_page) not in fake.calls
+
+    fake = FakeStreamlit()
+    fake.session_state[LATEST_SEARCH_KEY] = result
+    fake.session_state[COMPARE_URNS_KEY] = ["100001"]
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    streamlit_app._compare_page(search_page=search_page)
+    assert ("switch_page", search_page) not in fake.calls

@@ -1,3 +1,4 @@
+import pytest
 from school_finder.models.search import PostcodeLocation, SchoolSearchRequest, SchoolSearchResult
 from school_finder.models.school import SchoolIdentity, SchoolResult
 from school_finder.ui.state import (
@@ -82,3 +83,56 @@ def test_clear_latest_search_also_clears_selected_school():
     state = {LATEST_SEARCH_KEY: _result(), SELECTED_SCHOOL_URN_KEY: "100001"}
     clear_latest_search(state)
     assert state == {}
+
+
+def test_compare_school_state_round_trip_limit_and_cleanup():
+    from school_finder.ui.state import (
+        COMPARE_URNS_KEY,
+        MAX_COMPARE_SCHOOLS,
+        add_compare_school,
+        clear_compare_schools,
+        get_compare_urns,
+        remove_compare_school,
+    )
+
+    state = {COMPARE_URNS_KEY: [" 100001 ", "100001", "", 123, "100002"]}
+    assert get_compare_urns(state) == ("100001", "100002")
+    assert get_compare_urns({COMPARE_URNS_KEY: "bad"}) == ()
+
+    state = {}
+    with pytest.raises(ValueError, match="urn is required"):
+        add_compare_school(state, "   ")
+    for index in range(MAX_COMPARE_SCHOOLS):
+        add_compare_school(state, f"{index}")
+    assert add_compare_school(state, "0") == tuple(str(index) for index in range(MAX_COMPARE_SCHOOLS))
+    with pytest.raises(ValueError, match="up to 4"):
+        add_compare_school(state, "extra")
+
+    assert remove_compare_school(state, "1") == ("0", "2", "3")
+    remove_compare_school(state, "0")
+    remove_compare_school(state, "2")
+    assert remove_compare_school(state, "3") == ()
+    assert COMPARE_URNS_KEY not in state
+    clear_compare_schools(state)
+
+
+def test_new_search_prunes_comparison_selection():
+    from school_finder.ui.state import COMPARE_URNS_KEY, get_compare_urns
+
+    keep = SchoolResult(identity=SchoolIdentity("100001", "Keep"))
+    state = {COMPARE_URNS_KEY: ["100001", "999999"]}
+    result = SchoolSearchResult(
+        request=SchoolSearchRequest("SW1A 2AA"),
+        postcode=PostcodeLocation("SW1A 2AA", 1, 2, True, None),
+        schools=(keep,),
+    )
+    set_latest_search(state, result)
+    assert get_compare_urns(state) == ("100001",)
+
+    empty = SchoolSearchResult(
+        request=SchoolSearchRequest("SW1A 2AA"),
+        postcode=PostcodeLocation("SW1A 2AA", 1, 2, True, None),
+        schools=(),
+    )
+    set_latest_search(state, empty)
+    assert COMPARE_URNS_KEY not in state

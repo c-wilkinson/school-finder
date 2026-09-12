@@ -28,6 +28,7 @@ from school_finder.models.search import SchoolSearchResult
 from school_finder.services.history import get_school_history
 from school_finder.services.search import search_schools
 from school_finder.services.subjects import get_school_subject_results
+from school_finder.ui.comparison import COMPARISON_SECTIONS, comparison_rows, selected_schools
 from school_finder.ui.controls import (
     CUSTOM_DEFAULT_WEIGHTS,
     PRESET_LABELS,
@@ -69,8 +70,13 @@ from school_finder.ui.formatting import (
     pastoral_note,
 )
 from school_finder.ui.state import (
+    MAX_COMPARE_SCHOOLS,
+    add_compare_school,
+    clear_compare_schools,
+    get_compare_urns,
     get_latest_search,
     get_selected_school_urn,
+    remove_compare_school,
     select_school,
     set_latest_search,
 )
@@ -246,6 +252,7 @@ def _render_school_card(
     school: SchoolResult,
     result: SchoolSearchResult,
     detail_page=None,
+    compare_page=None,
 ) -> None:
     with st.container(border=True):
         title, distance, match = st.columns([6, 2, 2])
@@ -291,15 +298,31 @@ def _render_school_card(
         if benchmark and comparisons:
             st.caption(f"Compared with {benchmark.label}: " + " • ".join(comparisons))
 
-        if detail_page is not None and st.button(
+        actions = st.columns(2)
+        if detail_page is not None and actions[0].button(
             "View details",
             key=f"school-details-{school.identity.urn}",
         ):
             select_school(st.session_state, school.identity.urn)
             st.switch_page(detail_page)
 
+        compare_urns = get_compare_urns(st.session_state)
+        in_compare = school.identity.urn in compare_urns
+        label = "Remove from compare" if in_compare else "Add to compare"
+        if actions[1].button(label, key=f"school-compare-{school.identity.urn}"):
+            if in_compare:
+                remove_compare_school(st.session_state, school.identity.urn)
+                st.rerun()
+            else:
+                try:
+                    add_compare_school(st.session_state, school.identity.urn)
+                except ValueError as exc:
+                    st.warning(str(exc))
+                else:
+                    st.rerun()
 
-def _render_results(result: SchoolSearchResult, detail_page=None) -> None:
+
+def _render_results(result: SchoolSearchResult, detail_page=None, compare_page=None) -> None:
     if not result.postcode.is_current:
         detail = f" ({result.postcode.termination_date})" if result.postcode.termination_date else ""
         st.warning(f"The supplied postcode is marked as terminated{detail}; using its last known coordinates.")
@@ -312,8 +335,15 @@ def _render_results(result: SchoolSearchResult, detail_page=None) -> None:
     if result.request.preferences is not None:
         st.caption("Schools are ranked using your selected preferences. Missing data is not treated as zero.")
 
+    compare_urns = get_compare_urns(st.session_state)
+    if compare_page is not None and len(compare_urns) >= 2:
+        if st.button(f"Compare selected ({len(compare_urns)})", type="primary"):
+            st.switch_page(compare_page)
+    elif compare_urns:
+        st.caption(f"Select at least 2 schools to compare ({len(compare_urns)}/{MAX_COMPARE_SCHOOLS} selected).")
+
     for index, school in enumerate(result.schools, start=1):
-        _render_school_card(index, school, result, detail_page)
+        _render_school_card(index, school, result, detail_page, compare_page)
 
     with st.expander("What do these measures mean?"):
         for label in (
@@ -347,7 +377,7 @@ def _render_results(result: SchoolSearchResult, detail_page=None) -> None:
     st.caption("Ofsted values may be School Finder equivalents where no official overall grade is available.")
 
 
-def _search_page(detail_page=None) -> None:
+def _search_page(detail_page=None, compare_page=None) -> None:
     """Render the school search page and preserve the latest successful result."""
     st.title("School Finder")
     st.markdown(
@@ -369,7 +399,7 @@ def _search_page(detail_page=None) -> None:
 
     result = get_latest_search(st.session_state)
     if result is not None:
-        _render_results(result, detail_page)
+        _render_results(result, detail_page, compare_page)
     elif not submitted and not search_failed:
         st.info("Enter a postcode in the sidebar to get started.")
 
@@ -586,7 +616,7 @@ def _render_destinations(
     _render_trends(history, "destinations", error=history_error)
 
 
-def _detail_page(search_page=None) -> None:
+def _detail_page(search_page=None, compare_page=None) -> None:
     """Render the selected school using the latest in-session search result."""
     result = get_latest_search(st.session_state)
     selected_urn = get_selected_school_urn(st.session_state)
@@ -603,6 +633,27 @@ def _detail_page(search_page=None) -> None:
 
     if search_page is not None and st.button("← Back to results"):
         st.switch_page(search_page)
+
+    compare_urns = get_compare_urns(st.session_state)
+    in_compare = school.identity.urn in compare_urns
+    action_columns = st.columns(2)
+    if action_columns[0].button(
+        "Remove from compare" if in_compare else "Add to compare",
+        key=f"detail-compare-{school.identity.urn}",
+    ):
+        if in_compare:
+            remove_compare_school(st.session_state, school.identity.urn)
+            st.rerun()
+        else:
+            try:
+                add_compare_school(st.session_state, school.identity.urn)
+            except ValueError as exc:
+                st.warning(str(exc))
+            else:
+                st.rerun()
+    if compare_page is not None and len(get_compare_urns(st.session_state)) >= 2:
+        if action_columns[1].button("Compare selected", key="detail-open-compare"):
+            st.switch_page(compare_page)
 
     st.title(school.identity.name)
     details = [
@@ -668,6 +719,59 @@ def _detail_page(search_page=None) -> None:
         _render_destinations(school, benchmarks, history, history_error)
 
 
+
+def _compare_page(search_page=None, detail_page=None) -> None:
+    """Render up to four schools side-by-side from the latest search."""
+    result = get_latest_search(st.session_state)
+    urns = get_compare_urns(st.session_state)
+    schools = selected_schools(result.schools, urns) if result is not None else ()
+
+    st.title("Compare schools")
+    if result is None:
+        st.info("Run a school search first, then add schools to compare.")
+        if search_page is not None and st.button("← Find schools"):
+            st.switch_page(search_page)
+        return
+
+    if len(schools) < 2:
+        st.info("Choose at least two schools from your search results to compare.")
+        if search_page is not None and st.button("← Back to results"):
+            st.switch_page(search_page)
+        return
+
+    st.caption(f"Comparing {len(schools)} of a maximum of {MAX_COMPARE_SCHOOLS} schools. ★ marks the best available numeric value in each row.")
+
+    columns = st.columns(len(schools))
+    for column, school in zip(columns, schools, strict=True):
+        column.markdown(f"### {school.identity.name}")
+        if detail_page is not None and column.button(
+            "View details",
+            key=f"compare-details-{school.identity.urn}",
+        ):
+            select_school(st.session_state, school.identity.urn)
+            st.switch_page(detail_page)
+        if column.button("Remove", key=f"compare-remove-{school.identity.urn}"):
+            remove_compare_school(st.session_state, school.identity.urn)
+            st.rerun()
+
+    for section in COMPARISON_SECTIONS:
+        st.subheader(section.title)
+        st.dataframe(
+            pd.DataFrame(comparison_rows(schools, section)),
+            hide_index=True,
+            width="stretch",
+        )
+
+    actions = st.columns(2)
+    if search_page is not None and actions[0].button("← Back to results", key="compare-back"):
+        st.switch_page(search_page)
+    if actions[1].button("Clear comparison", key="compare-clear"):
+        clear_compare_schools(st.session_state)
+        if search_page is not None:
+            st.switch_page(search_page)
+        else:
+            st.rerun()
+
 def main() -> None:
     if st is None:
         raise ImportError(
@@ -679,21 +783,27 @@ def main() -> None:
 
     pages = {}
     search_page = st.Page(
-        lambda: _search_page(pages["detail"]),
+        lambda: _search_page(pages["detail"], pages["compare"]),
         title="Find schools",
         icon="🔎",
         url_path="find-schools",
         default=True,
     )
+    compare_page = st.Page(
+        lambda: _compare_page(pages["search"], pages["detail"]),
+        title="Compare schools",
+        icon="⚖️",
+        url_path="compare-schools",
+    )
     detail_page = st.Page(
-        lambda: _detail_page(pages["search"]),
+        lambda: _detail_page(pages["search"], pages["compare"]),
         title="School detail",
         icon="🏫",
         url_path="school-detail",
     )
-    pages.update(search=search_page, detail=detail_page)
+    pages.update(search=search_page, compare=compare_page, detail=detail_page)
 
-    navigation = st.navigation([search_page, detail_page])
+    navigation = st.navigation([search_page, compare_page, detail_page])
     navigation.run()
 
     st.markdown("---")
