@@ -8,6 +8,8 @@
 
 School Finder combines several public datasets into one structured local dataset, with reusable search and scoring logic that can be consumed from the CLI or directly from Python.
 
+**Try the live web app:** [https://school-finder.streamlit.app/](https://school-finder.streamlit.app/)
+
 The longer-term aim is for the same core to power a Streamlit web app, public API and MCP server.
 
 ## Why this exists
