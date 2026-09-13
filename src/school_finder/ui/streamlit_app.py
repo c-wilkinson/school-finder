@@ -55,6 +55,12 @@ from school_finder.ui.detail import (
     workforce_ratio_rows,
     workforce_rows,
 )
+from school_finder.ui.match import (
+    comparison_match_rows,
+    match_breakdown_rows,
+    preference_profile,
+    priorities_summary,
+)
 from school_finder.ui.formatting import (
     benchmark_comparisons,
     benchmark_for_school,
@@ -159,6 +165,66 @@ def _render_personal_summary(urn: str) -> None:
     if personal.notes:
         preview = personal.notes if len(personal.notes) <= 180 else f"{personal.notes[:177]}..."
         st.caption(f"My notes: {preview}")
+
+
+def _render_match_explanation(school: SchoolResult, result: SchoolSearchResult) -> None:
+    """Explain how the selected preference score was calculated."""
+    score = school.preference_score
+    preferences = result.request.preferences
+    if score is None or preferences is None:
+        st.info("No preference score is available for this search.")
+        return
+
+    metrics = st.columns(2)
+    metrics[0].metric("Match score", format_match_score(score.overall), help=MEASURE_HELP["Match"])
+    metrics[1].metric("Data coverage", format_percent(score.coverage_pct, decimals=0))
+
+    st.caption(f"Your priorities: {preference_profile(preferences)}")
+    st.caption(priorities_summary(preferences))
+
+    if score.coverage_pct < 100:
+        st.info(
+            f"{score.coverage_pct:.0f}% of your requested preference data was available. "
+            "Missing measures are excluded and their weighting is redistributed across the "
+            "available measures."
+        )
+
+    rows = match_breakdown_rows(score)
+    if rows:
+        st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
+    else:
+        st.info("No contributing preference measures are available for this school.")
+
+    st.caption(
+        "Most component scores compare this school with the other schools in your current "
+        "search. Ofsted and pastoral care use fixed scoring scales. The contribution column "
+        "shows how much each available measure adds to the overall match score."
+    )
+
+
+def _comparison_personal_rows(schools: tuple[SchoolResult, ...]) -> list[dict[str, str]]:
+    """Build the personal-state summary shown at the top of Compare."""
+    rows = [
+        {"My view": "Status"},
+        {"My view": "My rating"},
+        {"My view": "Match"},
+        {"My view": "Match coverage"},
+    ]
+    for school in schools:
+        personal = get_personal_school(st.session_state, school.identity.urn)
+        status = {
+            SchoolDisposition.NEUTRAL: "—",
+            SchoolDisposition.SHORTLISTED: "♥ Shortlisted",
+            SchoolDisposition.NOT_FOR_US: "Not for us",
+        }[personal.disposition]
+        score = school.preference_score
+        rows[0][school.identity.name] = status
+        rows[1][school.identity.name] = _rating_display(personal.rating)
+        rows[2][school.identity.name] = format_match_score(score.overall if score else None)
+        rows[3][school.identity.name] = (
+            format_percent(score.coverage_pct, decimals=0) if score else "—"
+        )
+    return rows
 
 
 def _render_personal_view(urn: str) -> None:
@@ -813,6 +879,7 @@ def _detail_page(search_page=None, compare_page=None) -> None:
             "Pastoral & behaviour",
             "Staffing",
             "Destinations",
+            "Why it matches",
             "My view",
         ]
     )
@@ -831,6 +898,8 @@ def _detail_page(search_page=None, compare_page=None) -> None:
     with tabs[6]:
         _render_destinations(school, benchmarks, history, history_error)
     with tabs[7]:
+        _render_match_explanation(school, result)
+    with tabs[8]:
         _render_personal_view(school.identity.urn)
 
 
@@ -931,7 +1000,11 @@ def _compare_page(search_page=None, detail_page=None) -> None:
             st.switch_page(search_page)
         return
 
-    st.caption(f"Comparing {len(schools)} of a maximum of {MAX_COMPARE_SCHOOLS} schools. ★ marks the best available numeric value in each row.")
+    st.caption(
+        f"Comparing {len(schools)} of a maximum of {MAX_COMPARE_SCHOOLS} schools. "
+        "★ marks the strongest available value where higher/lower performance has a clear "
+        "direction. Match scores reflect your selected priorities."
+    )
 
     columns = st.columns(len(schools))
     for column, school in zip(columns, schools, strict=True):
@@ -946,6 +1019,13 @@ def _compare_page(search_page=None, detail_page=None) -> None:
             remove_compare_school(st.session_state, school.identity.urn)
             st.rerun()
 
+    st.subheader("My view")
+    st.dataframe(
+        pd.DataFrame(_comparison_personal_rows(schools)),
+        hide_index=True,
+        width="stretch",
+    )
+
     for section in COMPARISON_SECTIONS:
         st.subheader(section.title)
         st.dataframe(
@@ -953,6 +1033,27 @@ def _compare_page(search_page=None, detail_page=None) -> None:
             hide_index=True,
             width="stretch",
         )
+
+    match_rows = comparison_match_rows(schools)
+    if match_rows:
+        st.subheader("Why they match your priorities")
+        preferences = result.request.preferences
+        if preferences is not None:
+            st.caption(f"Your priorities: {preference_profile(preferences)}")
+            st.caption(priorities_summary(preferences))
+        st.dataframe(pd.DataFrame(match_rows), hide_index=True, width="stretch")
+        st.caption(
+            "Component scores show how each school performs for the priorities used by your "
+            "latest search. Most are relative to the current search candidate set; — means the "
+            "measure was unavailable."
+        )
+        for school in schools:
+            score = school.preference_score
+            if score is not None and score.coverage_pct < 100:
+                st.caption(
+                    f"{school.identity.name}: {score.coverage_pct:.0f}% match coverage; "
+                    "available priorities were reweighted."
+                )
 
     actions = st.columns(2)
     if search_page is not None and actions[0].button("← Back to results", key="compare-back"):

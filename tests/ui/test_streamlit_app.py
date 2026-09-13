@@ -857,6 +857,7 @@ def test_detail_page_with_selected_school_renders_every_section(monkeypatch):
         "Pastoral & behaviour",
         "Staffing",
         "Destinations",
+        "Why it matches",
         "My view",
     )
 
@@ -1223,7 +1224,7 @@ def test_compare_page_renders_opens_details_removes_and_navigates(monkeypatch):
     streamlit_app._compare_page(search_page=search_page, detail_page=detail_page)
     assert fake.session_state[SELECTED_SCHOOL_URN_KEY] in {"100001", "100002"}
     assert ("switch_page", detail_page) in fake.calls
-    assert len([call for call in fake.calls if call[0] == "dataframe"]) == len(streamlit_app.COMPARISON_SECTIONS)
+    assert len([call for call in fake.calls if call[0] == "dataframe"]) == len(streamlit_app.COMPARISON_SECTIONS) + 1
 
     fake = FakeStreamlit({"Remove": True})
     fake.session_state[LATEST_SEARCH_KEY] = result
@@ -1580,3 +1581,128 @@ def test_my_school_card_shows_saved_personal_summary(monkeypatch):
 
     assert ("caption", "My rating: ★★★☆☆ (3/5)") in fake.calls
     assert ("caption", "My notes: Strong first impression") in fake.calls
+
+
+def _score_with_components(*, coverage=80.0, distance_score=90.0, progress_score=None):
+    from school_finder.models.scoring import ScoreComponent
+
+    return SchoolScore(
+        overall=82.5,
+        coverage_pct=coverage,
+        components=(
+            ScoreComponent(PreferenceMetric.DISTANCE, 1.2, distance_score, 20.0, 25.0),
+            ScoreComponent(PreferenceMetric.OFSTED, "Good", 66.67, 20.0, 25.0),
+            ScoreComponent(PreferenceMetric.ATTAINMENT8, 52.0, 80.0, 20.0, 25.0),
+            ScoreComponent(PreferenceMetric.PROGRESS8, 0.2 if progress_score is not None else None, progress_score, 20.0, 0.0 if progress_score is None else 25.0),
+            ScoreComponent(PreferenceMetric.GRADE5_ENGLISH_MATHS, 61.0, 61.0, 15.0, 18.75),
+            ScoreComponent(PreferenceMetric.EBACC_APS, None, None, 5.0, 0.0),
+            ScoreComponent(PreferenceMetric.PASTORAL_CARE, 72.0, 72.0, 0.0, 0.0),
+        ),
+    )
+
+
+def test_render_match_explanation_shows_priorities_coverage_and_breakdown(monkeypatch):
+    fake = FakeStreamlit()
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    school = replace(_school(), preference_score=_score_with_components(coverage=80.0))
+    result = _result(schools=[school])
+
+    streamlit_app._render_match_explanation(school, result)
+
+    assert any(call[0] == "metric" and call[1] == "Match score" for call in fake.calls)
+    assert any(call[0] == "metric" and call[1] == "Data coverage" and call[2] == "80%" for call in fake.calls)
+    assert any(call[0] == "caption" and call[1] == "Your priorities: Balanced" for call in fake.calls)
+    assert any(call[0] == "caption" and "Distance 20%" in call[1] for call in fake.calls)
+    assert any(call[0] == "info" and "redistributed" in call[1] for call in fake.calls)
+    assert any(call[0] == "dataframe" and call[1][0] == "Priority" for call in fake.calls)
+    assert any(call[0] == "caption" and "current search" in call[1] for call in fake.calls)
+
+
+def test_render_match_explanation_handles_complete_empty_and_unavailable_scores(monkeypatch):
+    fake = FakeStreamlit()
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    school = _school(coverage=100)
+    result = _result(schools=[school])
+    streamlit_app._render_match_explanation(school, result)
+    assert any(call[0] == "info" and "No contributing" in call[1] for call in fake.calls)
+    assert not any(call[0] == "info" and "redistributed" in call[1] for call in fake.calls)
+
+    fake = FakeStreamlit()
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    no_score = _school(score=None)
+    streamlit_app._render_match_explanation(no_score, _result(schools=[no_score]))
+    assert any(call[0] == "info" and "No preference score" in call[1] for call in fake.calls)
+
+    fake = FakeStreamlit()
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    streamlit_app._render_match_explanation(_school(), _result(preferences=False))
+    assert any(call[0] == "info" and "No preference score" in call[1] for call in fake.calls)
+
+
+def test_comparison_personal_rows_show_status_rating_match_and_missing_score(monkeypatch):
+    from school_finder.models.personalisation import SchoolDisposition
+    from school_finder.ui.state import set_school_disposition, set_school_rating
+
+    first = replace(_school(), preference_score=_score_with_components())
+    second = replace(first, identity=replace(first.identity, urn="100002", name="Second School"))
+    third = replace(_school(score=None), identity=replace(_school(score=None).identity, urn="100003", name="Third School"))
+    fake = FakeStreamlit()
+    set_school_disposition(fake.session_state, "100001", SchoolDisposition.SHORTLISTED)
+    set_school_rating(fake.session_state, "100001", 4)
+    set_school_disposition(fake.session_state, "100002", SchoolDisposition.NOT_FOR_US)
+    monkeypatch.setattr(streamlit_app, "st", fake)
+
+    rows = streamlit_app._comparison_personal_rows((first, second, third))
+
+    assert rows[0] == {
+        "My view": "Status",
+        "Example School": "♥ Shortlisted",
+        "Second School": "Not for us",
+        "Third School": "—",
+    }
+    assert rows[1]["Example School"] == "★★★★☆ (4/5)"
+    assert rows[1]["Second School"] == "Not rated"
+    assert rows[2]["Third School"] == "—"
+    assert rows[3]["Third School"] == "—"
+
+
+def test_compare_page_shows_personal_state_and_component_breakdown(monkeypatch):
+    from school_finder.ui.state import COMPARE_URNS_KEY, LATEST_SEARCH_KEY
+
+    first = replace(_school(), preference_score=_score_with_components(coverage=80.0, distance_score=90.0))
+    second = replace(
+        first,
+        identity=replace(first.identity, urn="100002", name="Second School"),
+        preference_score=_score_with_components(coverage=100.0, distance_score=75.0, progress_score=88.0),
+    )
+    result = _result(schools=[first, second])
+    fake = FakeStreamlit()
+    fake.session_state[LATEST_SEARCH_KEY] = result
+    fake.session_state[COMPARE_URNS_KEY] = ["100001", "100002"]
+    monkeypatch.setattr(streamlit_app, "st", fake)
+
+    streamlit_app._compare_page()
+
+    assert ("subheader", "My view") in fake.calls
+    assert ("subheader", "Why they match your priorities") in fake.calls
+    assert any(call[0] == "dataframe" and call[1][0] == "Priority" for call in fake.calls)
+    assert any(call[0] == "caption" and call[1] == "Your priorities: Balanced" for call in fake.calls)
+    assert any(call[0] == "caption" and "Example School: 80% match coverage" in call[1] for call in fake.calls)
+    assert not any(call[0] == "caption" and "Second School: 100% match coverage" in call[1] for call in fake.calls)
+
+
+def test_compare_match_breakdown_can_render_without_request_preferences(monkeypatch):
+    from school_finder.ui.state import COMPARE_URNS_KEY, LATEST_SEARCH_KEY
+
+    first = replace(_school(), preference_score=_score_with_components())
+    second = replace(first, identity=replace(first.identity, urn="100002", name="Second School"))
+    result = _result(schools=[first, second], preferences=False)
+    fake = FakeStreamlit()
+    fake.session_state[LATEST_SEARCH_KEY] = result
+    fake.session_state[COMPARE_URNS_KEY] = ["100001", "100002"]
+    monkeypatch.setattr(streamlit_app, "st", fake)
+
+    streamlit_app._compare_page()
+
+    assert ("subheader", "Why they match your priorities") in fake.calls
+    assert not any(call[0] == "caption" and call[1].startswith("Your priorities:") for call in fake.calls)
