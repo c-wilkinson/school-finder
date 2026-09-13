@@ -535,7 +535,7 @@ def test_main_runs_search_and_renders_results(monkeypatch, tmp_path):
     searched = []
     monkeypatch.setattr(streamlit_app, "_cached_search", lambda data_dir, req: searched.append((data_dir, req)) or expected)
     rendered = []
-    monkeypatch.setattr(streamlit_app, "_render_results", lambda result, detail_page=None, compare_page=None: rendered.append(result))
+    monkeypatch.setattr(streamlit_app, "_render_results", lambda result, detail_page=None, compare_page=None, my_schools_page=None: rendered.append(result))
     streamlit_app.main()
     assert searched == [(str(tmp_path), request)]
     assert rendered == [expected]
@@ -572,6 +572,14 @@ def test_main_uses_page_navigation_shell(monkeypatch):
         (
             "Page",
             {
+                "title": "My schools",
+                "icon": "♥️",
+                "url_path": "my-schools",
+            },
+        ),
+        (
+            "Page",
+            {
                 "title": "Compare schools",
                 "icon": "⚖️",
                 "url_path": "compare-schools",
@@ -586,7 +594,7 @@ def test_main_uses_page_navigation_shell(monkeypatch):
             },
         ),
     ]
-    assert ("navigation", 3, {}) in fake.calls
+    assert ("navigation", 4, {}) in fake.calls
     assert any(call[0] == "page_run" for call in fake.calls)
 
 
@@ -597,7 +605,7 @@ def test_search_page_renders_stored_result_without_resubmitting(monkeypatch):
     monkeypatch.setattr(streamlit_app, "st", fake)
     monkeypatch.setattr(streamlit_app, "_sidebar_form", lambda: (False, None))
     rendered = []
-    monkeypatch.setattr(streamlit_app, "_render_results", lambda result, detail_page=None, compare_page=None: rendered.append(result))
+    monkeypatch.setattr(streamlit_app, "_render_results", lambda result, detail_page=None, compare_page=None, my_schools_page=None: rendered.append(result))
 
     streamlit_app._search_page()
 
@@ -618,7 +626,7 @@ def test_failed_search_preserves_and_renders_previous_result(monkeypatch):
         lambda *args: (_ for _ in ()).throw(ValueError("bad search")),
     )
     rendered = []
-    monkeypatch.setattr(streamlit_app, "_render_results", lambda result, detail_page=None, compare_page=None: rendered.append(result))
+    monkeypatch.setattr(streamlit_app, "_render_results", lambda result, detail_page=None, compare_page=None, my_schools_page=None: rendered.append(result))
 
     streamlit_app._search_page()
 
@@ -1270,3 +1278,180 @@ def test_compare_navigation_buttons_can_be_left_unpressed(monkeypatch):
     monkeypatch.setattr(streamlit_app, "st", fake)
     streamlit_app._compare_page(search_page=search_page)
     assert ("switch_page", search_page) not in fake.calls
+
+
+def test_personal_disposition_controls_add_and_remove_shortlist(monkeypatch):
+    from school_finder.models.personalisation import SchoolDisposition
+    from school_finder.ui.state import get_personal_school, set_school_disposition
+
+    fake = FakeStreamlit({"♡ Shortlist": True})
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    streamlit_app._render_personal_disposition("100001", key_prefix="school")
+    assert get_personal_school(fake.session_state, "100001").disposition is SchoolDisposition.SHORTLISTED
+    assert ("rerun",) in fake.calls
+
+    fake = FakeStreamlit({"♥ Shortlisted": True})
+    set_school_disposition(fake.session_state, "100001", SchoolDisposition.SHORTLISTED)
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    streamlit_app._render_personal_disposition("100001", key_prefix="school")
+    assert get_personal_school(fake.session_state, "100001").disposition is SchoolDisposition.NEUTRAL
+    assert any(call == ("caption", "♥ Shortlisted") for call in fake.calls)
+    active_button = next(call for call in fake.calls if call[0] == "button" and call[1] == "♥ Shortlisted")
+    assert active_button[2]["type"] == "primary"
+
+
+def test_personal_disposition_controls_add_and_remove_not_for_us(monkeypatch):
+    from school_finder.models.personalisation import SchoolDisposition
+    from school_finder.ui.state import get_personal_school, set_school_disposition
+
+    fake = FakeStreamlit({"Not for us": True})
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    streamlit_app._render_personal_disposition("100001", key_prefix="detail")
+    assert get_personal_school(fake.session_state, "100001").disposition is SchoolDisposition.NOT_FOR_US
+    assert ("rerun",) in fake.calls
+
+    fake = FakeStreamlit({"✓ Not for us": True})
+    set_school_disposition(fake.session_state, "100001", SchoolDisposition.NOT_FOR_US)
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    streamlit_app._render_personal_disposition("100001", key_prefix="detail")
+    assert get_personal_school(fake.session_state, "100001").disposition is SchoolDisposition.NEUTRAL
+    assert any(call == ("caption", '🚫 Marked "Not for us"') for call in fake.calls)
+    active_button = next(call for call in fake.calls if call[0] == "button" and call[1] == "✓ Not for us")
+    assert active_button[2]["type"] == "primary"
+
+
+def test_personal_disposition_controls_render_neutral_state_without_mutation(monkeypatch):
+    from school_finder.models.personalisation import SchoolDisposition
+    from school_finder.ui.state import get_personal_school
+
+    fake = FakeStreamlit()
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    streamlit_app._render_personal_disposition("100001", key_prefix="school")
+
+    assert get_personal_school(fake.session_state, "100001").disposition is SchoolDisposition.NEUTRAL
+    assert not any(call[0] == "caption" and ("Shortlisted" in call[1] or "Not for us" in call[1]) for call in fake.calls)
+    buttons = [call for call in fake.calls if call[0] == "button"]
+    assert [call[1] for call in buttons] == ["♡ Shortlist", "Not for us"]
+    assert all(call[2]["type"] == "secondary" for call in buttons)
+
+
+def test_render_results_my_schools_button_opens_page(monkeypatch):
+    from school_finder.models.personalisation import SchoolDisposition
+    from school_finder.ui.state import set_school_disposition
+
+    result = _result()
+    my_schools_page = object()
+    fake = FakeStreamlit({"My schools (1)": True})
+    fake.session_state[LATEST_SEARCH_KEY] = result
+    set_school_disposition(fake.session_state, "100001", SchoolDisposition.SHORTLISTED)
+    monkeypatch.setattr(streamlit_app, "st", fake)
+
+    streamlit_app._render_results(result, my_schools_page=my_schools_page)
+
+    assert ("switch_page", my_schools_page) in fake.calls
+
+
+def test_my_schools_page_empty_can_return_to_search(monkeypatch):
+    search_page = object()
+    fake = FakeStreamlit({"← Find schools": True})
+    monkeypatch.setattr(streamlit_app, "st", fake)
+
+    streamlit_app._my_schools_page(search_page=search_page)
+
+    assert any(call[0] == "info" and "haven't shortlisted" in call[1] for call in fake.calls)
+    assert ("switch_page", search_page) in fake.calls
+
+
+def test_my_schools_page_renders_saved_sections_from_latest_search(monkeypatch):
+    from school_finder.models.personalisation import SchoolDisposition
+    from school_finder.ui.state import set_school_disposition
+
+    first = _school()
+    second = replace(
+        _school(),
+        identity=replace(_school().identity, urn="100002", name="Second School"),
+    )
+    result = _result(schools=[first, second])
+    fake = FakeStreamlit()
+    fake.session_state[LATEST_SEARCH_KEY] = result
+    set_school_disposition(fake.session_state, "100001", SchoolDisposition.SHORTLISTED)
+    set_school_disposition(fake.session_state, "100002", SchoolDisposition.NOT_FOR_US)
+    monkeypatch.setattr(streamlit_app, "st", fake)
+
+    streamlit_app._my_schools_page()
+
+    assert ("subheader", "Shortlisted (1)") in fake.calls
+    assert ("subheader", "Not for us (1)") in fake.calls
+    assert ("markdown", "### Example School") in fake.calls
+    assert ("markdown", "### Second School") in fake.calls
+
+
+def test_my_schools_page_handles_saved_school_outside_latest_search(monkeypatch):
+    from school_finder.models.personalisation import SchoolDisposition
+    from school_finder.ui.state import set_school_disposition
+
+    fake = FakeStreamlit()
+    fake.session_state[LATEST_SEARCH_KEY] = _result()
+    set_school_disposition(fake.session_state, "999999", SchoolDisposition.SHORTLISTED)
+    monkeypatch.setattr(streamlit_app, "st", fake)
+
+    streamlit_app._my_schools_page()
+
+    assert ("markdown", "### URN 999999") in fake.calls
+    assert any(
+        call[0] == "caption" and "isn't in your latest search results" in call[1]
+        for call in fake.calls
+    )
+    assert any(
+        call == ("caption", 'No schools are currently marked "Not for us".')
+        for call in fake.calls
+    )
+
+
+def test_my_schools_page_handles_saved_school_without_latest_search(monkeypatch):
+    from school_finder.models.personalisation import SchoolDisposition
+    from school_finder.ui.state import set_school_disposition
+
+    fake = FakeStreamlit()
+    set_school_disposition(fake.session_state, "999999", SchoolDisposition.NOT_FOR_US)
+    monkeypatch.setattr(streamlit_app, "st", fake)
+
+    streamlit_app._my_schools_page()
+
+    assert ("markdown", "### URN 999999") in fake.calls
+    assert ("caption", "No schools are currently shortlisted.") in fake.calls
+
+
+def test_render_my_school_card_can_open_details(monkeypatch):
+    detail_page = object()
+    fake = FakeStreamlit({"View details": True})
+    monkeypatch.setattr(streamlit_app, "st", fake)
+
+    streamlit_app._render_my_school_card(_school(), detail_page=detail_page)
+
+    assert fake.session_state[SELECTED_SCHOOL_URN_KEY] == "100001"
+    assert ("switch_page", detail_page) in fake.calls
+
+
+def test_my_schools_page_back_button(monkeypatch):
+    from school_finder.models.personalisation import SchoolDisposition
+    from school_finder.ui.state import set_school_disposition
+
+    search_page = object()
+    fake = FakeStreamlit({"← Back to find schools": True})
+    fake.session_state[LATEST_SEARCH_KEY] = _result()
+    set_school_disposition(fake.session_state, "100001", SchoolDisposition.SHORTLISTED)
+    monkeypatch.setattr(streamlit_app, "st", fake)
+
+    streamlit_app._my_schools_page(search_page=search_page)
+
+    assert ("switch_page", search_page) in fake.calls
+
+
+def test_my_schools_page_empty_without_search_page(monkeypatch):
+    fake = FakeStreamlit()
+    monkeypatch.setattr(streamlit_app, "st", fake)
+
+    streamlit_app._my_schools_page()
+
+    assert any(call[0] == "info" and "haven't shortlisted" in call[1] for call in fake.calls)

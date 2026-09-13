@@ -23,6 +23,7 @@ from school_finder.models.filters import (
     SelectionFilter,
 )
 from school_finder.models.preferences import PreferenceMetric, PreferencePreset
+from school_finder.models.personalisation import SchoolDisposition
 from school_finder.models.school import SchoolResult
 from school_finder.models.search import SchoolSearchResult
 from school_finder.services.history import get_school_history
@@ -75,9 +76,13 @@ from school_finder.ui.state import (
     clear_compare_schools,
     get_compare_urns,
     get_latest_search,
+    get_personal_school,
+    get_rejected_urns,
+    get_shortlisted_urns,
     get_selected_school_urn,
     remove_compare_school,
     select_school,
+    set_school_disposition,
     set_latest_search,
 )
 
@@ -96,6 +101,45 @@ _WEIGHT_LABELS = {
     PreferenceMetric.EBACC_APS: "EBacc APS",
     PreferenceMetric.PASTORAL_CARE: "Pastoral care",
 }
+
+
+def _render_personal_disposition(urn: str, *, key_prefix: str) -> None:
+    """Render shortlist / not-for-us controls for one school."""
+    personal = get_personal_school(st.session_state, urn)
+    disposition = personal.disposition
+
+    if disposition is SchoolDisposition.SHORTLISTED:
+        st.caption("♥ Shortlisted")
+    elif disposition is SchoolDisposition.NOT_FOR_US:
+        st.caption('🚫 Marked "Not for us"')
+
+    shortlisted = disposition is SchoolDisposition.SHORTLISTED
+    not_for_us = disposition is SchoolDisposition.NOT_FOR_US
+    actions = st.columns(2)
+    if actions[0].button(
+        "♥ Shortlisted" if shortlisted else "♡ Shortlist",
+        key=f"{key_prefix}-shortlist-{urn}",
+        type="primary" if shortlisted else "secondary",
+    ):
+        set_school_disposition(
+            st.session_state,
+            urn,
+            SchoolDisposition.NEUTRAL if shortlisted else SchoolDisposition.SHORTLISTED,
+        )
+        st.rerun()
+        return
+
+    if actions[1].button(
+        "✓ Not for us" if not_for_us else "Not for us",
+        key=f"{key_prefix}-not-for-us-{urn}",
+        type="primary" if not_for_us else "secondary",
+    ):
+        set_school_disposition(
+            st.session_state,
+            urn,
+            SchoolDisposition.NEUTRAL if not_for_us else SchoolDisposition.NOT_FOR_US,
+        )
+        st.rerun()
 
 
 def _cached_search_impl(data_dir: str, request):
@@ -293,6 +337,11 @@ def _render_school_card(
                 f"Match score uses {school.preference_score.coverage_pct:.0f}% of the requested preference data."
             )
 
+        _render_personal_disposition(
+            school.identity.urn,
+            key_prefix="school",
+        )
+
         benchmark = benchmark_for_school(school, result.benchmarks)
         comparisons = benchmark_comparisons(school, benchmark)
         if benchmark and comparisons:
@@ -322,7 +371,12 @@ def _render_school_card(
                     st.rerun()
 
 
-def _render_results(result: SchoolSearchResult, detail_page=None, compare_page=None) -> None:
+def _render_results(
+    result: SchoolSearchResult,
+    detail_page=None,
+    compare_page=None,
+    my_schools_page=None,
+) -> None:
     if not result.postcode.is_current:
         detail = f" ({result.postcode.termination_date})" if result.postcode.termination_date else ""
         st.warning(f"The supplied postcode is marked as terminated{detail}; using its last known coordinates.")
@@ -334,6 +388,13 @@ def _render_results(result: SchoolSearchResult, detail_page=None, compare_page=N
     st.subheader(f"Found {len(result.schools)} schools")
     if result.request.preferences is not None:
         st.caption("Schools are ranked using your selected preferences. Missing data is not treated as zero.")
+
+    shortlisted_count = len(get_shortlisted_urns(st.session_state))
+    if my_schools_page is not None and st.button(
+        f"My schools ({shortlisted_count})",
+        key="open-my-schools",
+    ):
+        st.switch_page(my_schools_page)
 
     compare_urns = get_compare_urns(st.session_state)
     if compare_page is not None and len(compare_urns) >= 2:
@@ -377,7 +438,7 @@ def _render_results(result: SchoolSearchResult, detail_page=None, compare_page=N
     st.caption("Ofsted values may be School Finder equivalents where no official overall grade is available.")
 
 
-def _search_page(detail_page=None, compare_page=None) -> None:
+def _search_page(detail_page=None, compare_page=None, my_schools_page=None) -> None:
     """Render the school search page and preserve the latest successful result."""
     st.title("School Finder")
     st.markdown(
@@ -399,7 +460,7 @@ def _search_page(detail_page=None, compare_page=None) -> None:
 
     result = get_latest_search(st.session_state)
     if result is not None:
-        _render_results(result, detail_page, compare_page)
+        _render_results(result, detail_page, compare_page, my_schools_page)
     elif not submitted and not search_failed:
         st.info("Enter a postcode in the sidebar to get started.")
 
@@ -665,6 +726,11 @@ def _detail_page(search_page=None, compare_page=None) -> None:
     ]
     st.caption(" • ".join(value for value in details if value))
 
+    _render_personal_disposition(
+        school.identity.urn,
+        key_prefix="detail",
+    )
+
     metrics = st.columns(3)
     metrics[0].metric("Distance", format_distance(school.travel.distance_miles), help=MEASURE_HELP["Distance"])
     match_value = school.preference_score.overall if school.preference_score else None
@@ -718,6 +784,81 @@ def _detail_page(search_page=None, compare_page=None) -> None:
     with tabs[6]:
         _render_destinations(school, benchmarks, history, history_error)
 
+
+
+def _render_my_school_card(school: SchoolResult, *, detail_page=None) -> None:
+    """Render one school saved in the personal shortlist/disposition state."""
+    with st.container(border=True):
+        st.markdown(f"### {school.identity.name}")
+        details = [
+            school.identity.sector,
+            school.identity.age_range,
+            school.identity.gender,
+            school.location.local_authority_name,
+        ]
+        st.caption(" • ".join(value for value in details if value))
+
+        metrics = st.columns(3)
+        metrics[0].metric("Ofsted", ofsted_display(school), help=MEASURE_HELP["Ofsted"])
+        metrics[1].metric(
+            "Attainment 8",
+            format_number(school.academics.attainment8),
+            help=MEASURE_HELP["Attainment 8"],
+        )
+        match_value = school.preference_score.overall if school.preference_score else None
+        metrics[2].metric("Match", format_match_score(match_value), help=MEASURE_HELP["Match"])
+
+        _render_personal_disposition(school.identity.urn, key_prefix="my-schools")
+        if detail_page is not None and st.button(
+            "View details",
+            key=f"my-schools-details-{school.identity.urn}",
+        ):
+            select_school(st.session_state, school.identity.urn)
+            st.switch_page(detail_page)
+
+
+def _my_schools_page(search_page=None, detail_page=None) -> None:
+    """Render schools the user has shortlisted or marked as not for them."""
+    st.title("My schools")
+    shortlisted = get_shortlisted_urns(st.session_state)
+    rejected = get_rejected_urns(st.session_state)
+
+    if not shortlisted and not rejected:
+        st.info("You haven't shortlisted any schools or marked any as not for us yet.")
+        if search_page is not None and st.button("← Find schools"):
+            st.switch_page(search_page)
+        return
+
+    result = get_latest_search(st.session_state)
+    schools_by_urn = (
+        {school.identity.urn: school for school in result.schools}
+        if result is not None
+        else {}
+    )
+
+    def render_section(title: str, urns: tuple[str, ...], empty_message: str) -> None:
+        st.subheader(f"{title} ({len(urns)})")
+        if not urns:
+            st.caption(empty_message)
+            return
+        for urn in urns:
+            school = schools_by_urn.get(urn)
+            if school is not None:
+                _render_my_school_card(school, detail_page=detail_page)
+                continue
+            with st.container(border=True):
+                st.markdown(f"### URN {urn}")
+                st.caption(
+                    "This school isn't in your latest search results. "
+                    "Search for it again to restore its current school details here."
+                )
+                _render_personal_disposition(urn, key_prefix="my-schools-missing")
+
+    render_section("Shortlisted", shortlisted, "No schools are currently shortlisted.")
+    render_section("Not for us", rejected, 'No schools are currently marked "Not for us".')
+
+    if search_page is not None and st.button("← Back to find schools", key="my-schools-back"):
+        st.switch_page(search_page)
 
 
 def _compare_page(search_page=None, detail_page=None) -> None:
@@ -783,11 +924,17 @@ def main() -> None:
 
     pages = {}
     search_page = st.Page(
-        lambda: _search_page(pages["detail"], pages["compare"]),
+        lambda: _search_page(pages["detail"], pages["compare"], pages["my_schools"]),
         title="Find schools",
         icon="🔎",
         url_path="find-schools",
         default=True,
+    )
+    my_schools_page = st.Page(
+        lambda: _my_schools_page(pages["search"], pages["detail"]),
+        title="My schools",
+        icon="♥️",
+        url_path="my-schools",
     )
     compare_page = st.Page(
         lambda: _compare_page(pages["search"], pages["detail"]),
@@ -801,9 +948,14 @@ def main() -> None:
         icon="🏫",
         url_path="school-detail",
     )
-    pages.update(search=search_page, compare=compare_page, detail=detail_page)
+    pages.update(
+        search=search_page,
+        my_schools=my_schools_page,
+        compare=compare_page,
+        detail=detail_page,
+    )
 
-    navigation = st.navigation([search_page, compare_page, detail_page])
+    navigation = st.navigation([search_page, my_schools_page, compare_page, detail_page])
     navigation.run()
 
     st.markdown("---")

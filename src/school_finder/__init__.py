@@ -17,6 +17,7 @@ from school_finder.models.ofsted import (
     OfstedEquivalentBasis,
     derive_equivalent_ofsted_rating,
 )
+from school_finder.models.personalisation import PersonalSchoolState, SchoolDisposition
 from school_finder.models.preferences import (
     PreferenceMetric,
     PreferencePreset,
@@ -44,9 +45,11 @@ __all__ = [
     "OfstedEquivalent",
     "OfstedEquivalentBasis",
     "OfstedRating",
+    "PersonalSchoolState",
     "PreferenceMetric",
     "PreferencePreset",
     "SchoolBenchmarks",
+    "SchoolDisposition",
     "SchoolGender",
     "SchoolPhase",
     "SchoolPreferences",
