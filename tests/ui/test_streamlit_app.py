@@ -144,6 +144,10 @@ class FakeStreamlit:
     def text_input(self, label, **kwargs):
         return self._answer(label, "")
 
+    def text_area(self, label, value="", **kwargs):
+        self.calls.append(("text_area", label, value, kwargs))
+        return self._answer(label, value)
+
     def slider(self, label, minimum, maximum, value, *args, **kwargs):
         return self._answer(label, value)
 
@@ -853,6 +857,7 @@ def test_detail_page_with_selected_school_renders_every_section(monkeypatch):
         "Pastoral & behaviour",
         "Staffing",
         "Destinations",
+        "My view",
     )
 
 
@@ -1455,3 +1460,123 @@ def test_my_schools_page_empty_without_search_page(monkeypatch):
     streamlit_app._my_schools_page()
 
     assert any(call[0] == "info" and "haven't shortlisted" in call[1] for call in fake.calls)
+
+
+
+def test_rating_display_formats_saved_and_empty_values():
+    assert streamlit_app._rating_display(None) == "Not rated"
+    assert streamlit_app._rating_display(1) == "★☆☆☆☆ (1/5)"
+    assert streamlit_app._rating_display(5) == "★★★★★ (5/5)"
+
+
+def test_personal_view_saves_rating_and_notes(monkeypatch):
+    from school_finder.ui.state import get_personal_school
+
+    fake = FakeStreamlit(
+        {
+            "My rating": 4,
+            "Notes": "  Great open evening. Alex liked the science block.  ",
+            "Save my view": True,
+        }
+    )
+    monkeypatch.setattr(streamlit_app, "st", fake)
+
+    streamlit_app._render_personal_view("100001")
+
+    personal = get_personal_school(fake.session_state, "100001")
+    assert personal.rating == 4
+    assert personal.notes == "Great open evening. Alex liked the science block."
+    assert ("rerun",) in fake.calls
+    assert any(call[0] == "text_area" and call[1] == "Notes" for call in fake.calls)
+
+
+def test_personal_view_prefills_and_can_clear_rating_and_notes(monkeypatch):
+    from school_finder.ui.state import (
+        PERSONAL_SCHOOLS_KEY,
+        set_school_notes,
+        set_school_rating,
+    )
+
+    fake = FakeStreamlit(
+        {
+            "My rating": None,
+            "Notes": "",
+            "Save my view": True,
+        }
+    )
+    set_school_rating(fake.session_state, "100001", 5)
+    set_school_notes(fake.session_state, "100001", "Visit notes")
+    monkeypatch.setattr(streamlit_app, "st", fake)
+
+    streamlit_app._render_personal_view("100001")
+
+    assert PERSONAL_SCHOOLS_KEY not in fake.session_state
+    note_call = next(call for call in fake.calls if call[0] == "text_area")
+    assert note_call[2] == "Visit notes"
+
+
+def test_personal_view_without_save_does_not_mutate_state(monkeypatch):
+    fake = FakeStreamlit({"My rating": 3, "Notes": "Unsaved"})
+    monkeypatch.setattr(streamlit_app, "st", fake)
+
+    streamlit_app._render_personal_view("100001")
+
+    assert fake.session_state == {}
+    assert any(
+        call[0] == "caption" and "session only" in call[1]
+        for call in fake.calls
+    )
+
+
+def test_personal_summary_renders_rating_and_truncated_notes(monkeypatch):
+    from school_finder.ui.state import set_school_notes, set_school_rating
+
+    fake = FakeStreamlit()
+    set_school_rating(fake.session_state, "100001", 4)
+    set_school_notes(fake.session_state, "100001", "x" * 200)
+    monkeypatch.setattr(streamlit_app, "st", fake)
+
+    streamlit_app._render_personal_summary("100001")
+
+    assert ("caption", "My rating: ★★★★☆ (4/5)") in fake.calls
+    note = next(call[1] for call in fake.calls if call[0] == "caption" and call[1].startswith("My notes:"))
+    assert note.endswith("...")
+    assert len(note.removeprefix("My notes: ")) == 180
+
+
+def test_personal_summary_is_silent_when_nothing_saved(monkeypatch):
+    fake = FakeStreamlit()
+    monkeypatch.setattr(streamlit_app, "st", fake)
+
+    streamlit_app._render_personal_summary("100001")
+
+    assert not fake.calls
+
+
+def test_detail_page_includes_my_view_tab(monkeypatch):
+    fake = FakeStreamlit()
+    fake.session_state[LATEST_SEARCH_KEY] = _result()
+    fake.session_state[SELECTED_SCHOOL_URN_KEY] = "100001"
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    monkeypatch.setattr(streamlit_app, "_cached_history", lambda *args: None)
+    monkeypatch.setattr(streamlit_app, "_cached_subjects", lambda *args: ())
+
+    streamlit_app._detail_page()
+
+    tabs_call = next(call for call in fake.calls if call[0] == "tabs")
+    assert tabs_call[1][-1] == "My view"
+    assert any(call[0] == "button" and call[1] == "Save my view" for call in fake.calls)
+
+
+def test_my_school_card_shows_saved_personal_summary(monkeypatch):
+    from school_finder.ui.state import set_school_notes, set_school_rating
+
+    fake = FakeStreamlit()
+    set_school_rating(fake.session_state, "100001", 3)
+    set_school_notes(fake.session_state, "100001", "Strong first impression")
+    monkeypatch.setattr(streamlit_app, "st", fake)
+
+    streamlit_app._render_my_school_card(_school())
+
+    assert ("caption", "My rating: ★★★☆☆ (3/5)") in fake.calls
+    assert ("caption", "My notes: Strong first impression") in fake.calls

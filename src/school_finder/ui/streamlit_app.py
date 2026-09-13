@@ -83,6 +83,8 @@ from school_finder.ui.state import (
     remove_compare_school,
     select_school,
     set_school_disposition,
+    set_school_notes,
+    set_school_rating,
     set_latest_search,
 )
 
@@ -139,6 +141,50 @@ def _render_personal_disposition(urn: str, *, key_prefix: str) -> None:
             urn,
             SchoolDisposition.NEUTRAL if not_for_us else SchoolDisposition.NOT_FOR_US,
         )
+        st.rerun()
+
+
+def _rating_display(rating: int | None) -> str:
+    """Return a compact five-star display for a saved personal rating."""
+    if rating is None:
+        return "Not rated"
+    return f"{'★' * rating}{'☆' * (5 - rating)} ({rating}/5)"
+
+
+def _render_personal_summary(urn: str) -> None:
+    """Render any saved rating and note for a school."""
+    personal = get_personal_school(st.session_state, urn)
+    if personal.rating is not None:
+        st.caption(f"My rating: {_rating_display(personal.rating)}")
+    if personal.notes:
+        preview = personal.notes if len(personal.notes) <= 180 else f"{personal.notes[:177]}..."
+        st.caption(f"My notes: {preview}")
+
+
+def _render_personal_view(urn: str) -> None:
+    """Render the editable personal rating and notes for one school."""
+    personal = get_personal_school(st.session_state, urn)
+    rating_options = (None, 1, 2, 3, 4, 5)
+    rating = st.selectbox(
+        "My rating",
+        rating_options,
+        index=rating_options.index(personal.rating),
+        format_func=_rating_display,
+        key=f"personal-rating-{urn}",
+    )
+    notes = st.text_area(
+        "Notes",
+        value=personal.notes or "",
+        placeholder="Add anything you want to remember about this school...",
+        key=f"personal-notes-{urn}",
+        height=180,
+    )
+    st.caption(
+        "Saved for this Streamlit session only. Clear the rating or notes and save again to remove them."
+    )
+    if st.button("Save my view", key=f"personal-save-{urn}", type="primary"):
+        set_school_rating(st.session_state, urn, rating)
+        set_school_notes(st.session_state, urn, notes)
         st.rerun()
 
 
@@ -767,6 +813,7 @@ def _detail_page(search_page=None, compare_page=None) -> None:
             "Pastoral & behaviour",
             "Staffing",
             "Destinations",
+            "My view",
         ]
     )
     with tabs[0]:
@@ -783,6 +830,8 @@ def _detail_page(search_page=None, compare_page=None) -> None:
         _render_staffing(school, benchmarks, history, history_error)
     with tabs[6]:
         _render_destinations(school, benchmarks, history, history_error)
+    with tabs[7]:
+        _render_personal_view(school.identity.urn)
 
 
 
@@ -808,6 +857,7 @@ def _render_my_school_card(school: SchoolResult, *, detail_page=None) -> None:
         match_value = school.preference_score.overall if school.preference_score else None
         metrics[2].metric("Match", format_match_score(match_value), help=MEASURE_HELP["Match"])
 
+        _render_personal_summary(school.identity.urn)
         _render_personal_disposition(school.identity.urn, key_prefix="my-schools")
         if detail_page is not None and st.button(
             "View details",
@@ -852,6 +902,7 @@ def _my_schools_page(search_page=None, detail_page=None) -> None:
                     "This school isn't in your latest search results. "
                     "Search for it again to restore its current school details here."
                 )
+                _render_personal_summary(urn)
                 _render_personal_disposition(urn, key_prefix="my-schools-missing")
 
     render_section("Shortlisted", shortlisted, "No schools are currently shortlisted.")
