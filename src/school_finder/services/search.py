@@ -535,6 +535,62 @@ def school_results_from_frame(frame: pd.DataFrame) -> list[SchoolResult]:
     ]
 
 
+def get_schools_by_urn(data_dir: Path, urns: Iterable[str]) -> tuple[SchoolResult, ...]:
+    """Load current canonical school details for the requested URNs.
+
+    The returned order follows the requested URN order. Search-only context such
+    as distance and preference scores is intentionally absent.
+    """
+    selected = tuple(
+        dict.fromkeys(
+            str(urn).strip()
+            for urn in urns
+            if str(urn).strip()
+        )
+    )
+    if not selected:
+        return ()
+
+    schools_path = data_dir / SCHOOLS_FILENAME
+    if not schools_path.exists():
+        raise SchoolFinderError(
+            f"Datasets are missing from {data_dir}. Run 'school-finder build' first."
+        )
+
+    require_pyarrow()
+    try:
+        frame = pd.read_parquet(
+            schools_path,
+            engine="pyarrow",
+            filters=[("urn", "in", list(selected))],
+        )
+    except Exception as exc:
+        raise SchoolFinderError(f"Could not read {schools_path}: {exc}") from exc
+
+    if frame.empty:
+        return ()
+
+    current = frame.copy()
+    current["urn"] = current["urn"].astype("string").str.strip()
+    current = current[current["urn"].isin(selected)].copy()
+    if current.empty:
+        return ()
+
+    current = _add_equivalent_ofsted(current)
+    current["address"] = current.apply(build_address, axis=1)
+
+    def age_range(row: pd.Series) -> str | None:
+        low = row.get("low_age")
+        high = row.get("high_age")
+        if pd.isna(low) or pd.isna(high):
+            return None
+        return f"{int(low)}–{int(high)}"
+
+    current["age_range"] = current.apply(age_range, axis=1)
+    by_urn = {school.identity.urn: school for school in school_results_from_frame(current)}
+    return tuple(by_urn[urn] for urn in selected if urn in by_urn)
+
+
 def search_schools(
     data_dir: Path,
     request: SchoolSearchRequest,

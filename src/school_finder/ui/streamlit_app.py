@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 import os
 from pathlib import Path
 
@@ -27,8 +28,9 @@ from school_finder.models.personalisation import SchoolDisposition
 from school_finder.models.school import SchoolResult
 from school_finder.models.search import SchoolSearchResult
 from school_finder.services.history import get_school_history
-from school_finder.services.search import search_schools
+from school_finder.services.search import get_schools_by_urn, search_schools
 from school_finder.services.subjects import get_school_subject_results
+from school_finder.ui.browser_storage import run_storage_command
 from school_finder.ui.comparison import COMPARISON_SECTIONS, comparison_rows, selected_schools
 from school_finder.ui.controls import (
     CUSTOM_DEFAULT_WEIGHTS,
@@ -54,6 +56,16 @@ from school_finder.ui.detail import (
     trend_lineage_note,
     workforce_ratio_rows,
     workforce_rows,
+)
+from school_finder.ui.personalisation_storage import (
+    enable_persistence,
+    forget_persistence,
+    handle_storage_response,
+    is_persistence_enabled,
+    is_persistence_hydrated,
+    is_persistence_synced,
+    next_storage_command,
+    persistence_warning,
 )
 from school_finder.ui.match import (
     comparison_match_rows,
@@ -167,10 +179,12 @@ def _render_personal_summary(urn: str) -> None:
         st.caption(f"My notes: {preview}")
 
 
-def _render_match_explanation(school: SchoolResult, result: SchoolSearchResult) -> None:
+def _render_match_explanation(
+    school: SchoolResult, result: SchoolSearchResult | None
+) -> None:
     """Explain how the selected preference score was calculated."""
     score = school.preference_score
-    preferences = result.request.preferences
+    preferences = result.request.preferences if result is not None else None
     if score is None or preferences is None:
         st.info("No preference score is available for this search.")
         return
@@ -227,6 +241,19 @@ def _comparison_personal_rows(schools: tuple[SchoolResult, ...]) -> list[dict[st
     return rows
 
 
+def _personal_storage_caption() -> str:
+    """Return context-sensitive copy for personal ratings and notes."""
+    if is_persistence_enabled(st.session_state):
+        return (
+            "Saved in this browser when you save your view. Clear the rating or notes and "
+            "save again to remove them."
+        )
+    return (
+        "Saved for this Streamlit session only. Use My schools → Remember my schools on "
+        "this device if you want to keep personalisation between visits."
+    )
+
+
 def _render_personal_view(urn: str) -> None:
     """Render the editable personal rating and notes for one school."""
     personal = get_personal_school(st.session_state, urn)
@@ -245,12 +272,60 @@ def _render_personal_view(urn: str) -> None:
         key=f"personal-notes-{urn}",
         height=180,
     )
-    st.caption(
-        "Saved for this Streamlit session only. Clear the rating or notes and save again to remove them."
-    )
+    st.caption(_personal_storage_caption())
     if st.button("Save my view", key=f"personal-save-{urn}", type="primary"):
         set_school_rating(st.session_state, urn, rating)
         set_school_notes(st.session_state, urn, notes)
+        st.rerun()
+
+
+def _sync_personalisation_storage() -> None:
+    """Run at most one localStorage operation required by the current session."""
+    command = next_storage_command(st.session_state)
+    if command is None:
+        return
+    response = run_storage_command(st, command)
+    handle_storage_response(st.session_state, response)
+
+
+def _render_personalisation_storage_controls() -> None:
+    """Render explicit opt-in/forget controls for browser persistence."""
+    st.subheader("Remember my schools")
+    warning = persistence_warning(st.session_state)
+    if warning:
+        st.warning(warning)
+
+    if not is_persistence_hydrated(st.session_state):
+        st.caption("Checking this browser for previously saved schools…")
+        return
+
+    if is_persistence_enabled(st.session_state):
+        if is_persistence_synced(st.session_state):
+            st.caption("✓ Your shortlist, ratings and notes are saved on this device.")
+        else:
+            st.caption("Saving your shortlist, ratings and notes on this device…")
+        st.caption(
+            "This information stays in this browser and is not synced to another device or account. "
+            "Anyone using this browser profile may be able to see saved notes."
+        )
+        if st.button("Forget saved personalisation", key="forget-personalisation"):
+            forget_persistence(st.session_state)
+            st.rerun()
+        return
+
+    st.caption(
+        "By default your shortlist, ratings and notes are available only for this Streamlit session."
+    )
+    st.caption(
+        "Choose to remember them and School Finder will store only this personal school state in "
+        "this browser. It is not synced to an account or another device."
+    )
+    if st.button(
+        "Remember my schools on this device",
+        key="remember-personalisation",
+        type="primary",
+    ):
+        enable_persistence(st.session_state)
         st.rerun()
 
 
@@ -266,14 +341,22 @@ def _cached_history_impl(data_dir: str, urn: str, local_authority_code: str | No
     return get_school_history(Path(data_dir), urn, local_authority_code)
 
 
+def _cached_schools_by_urn_impl(data_dir: str, urns: tuple[str, ...]):
+    return get_schools_by_urn(Path(data_dir), urns)
+
+
 if st is not None:
     _cached_search = st.cache_data(ttl=900, show_spinner=False)(_cached_search_impl)
     _cached_subjects = st.cache_data(ttl=900, show_spinner=False)(_cached_subjects_impl)
     _cached_history = st.cache_data(ttl=900, show_spinner=False)(_cached_history_impl)
+    _cached_schools_by_urn = st.cache_data(ttl=60, show_spinner=False)(
+        _cached_schools_by_urn_impl
+    )
 else:
     _cached_search = _cached_search_impl
     _cached_subjects = _cached_subjects_impl
     _cached_history = _cached_history_impl
+    _cached_schools_by_urn = _cached_schools_by_urn_impl
 
 
 def _optional_number(label: str, **kwargs) -> float | None:
@@ -790,14 +873,33 @@ def _render_destinations(
 
 
 def _detail_page(search_page=None, compare_page=None) -> None:
-    """Render the selected school using the latest in-session search result."""
+    """Render the selected school, reloading saved schools from the canonical dataset."""
     result = get_latest_search(st.session_state)
     selected_urn = get_selected_school_urn(st.session_state)
     school = find_school(result, selected_urn)
+    dynamic_error = None
+
+    if school is None and selected_urn:
+        data_dir = os.environ.get("SCHOOL_FINDER_DATA_DIR", str(DEFAULT_DATA_DIR))
+        try:
+            loaded = _cached_schools_by_urn(data_dir, (selected_urn,))
+        except (SchoolFinderError, OSError, ImportError, ValueError) as exc:
+            dynamic_error = str(exc)
+        else:
+            if loaded:
+                school = loaded[0]
 
     if school is None:
         st.title("School detail")
-        st.info("Choose a school from your search results to view its full detail.")
+        if dynamic_error:
+            st.warning(f"Could not reload the selected school: {dynamic_error}")
+        elif selected_urn:
+            st.info(
+                f"URN {selected_urn} could not be found in the current School Finder dataset. "
+                "The school may have closed or changed URN."
+            )
+        else:
+            st.info("Choose a school from your search results or My schools to view its full detail.")
         if result is None:
             st.caption("Your latest successful search will remain available while this session is open.")
         if search_page is not None and st.button("← Back to find schools"):
@@ -807,26 +909,33 @@ def _detail_page(search_page=None, compare_page=None) -> None:
     if search_page is not None and st.button("← Back to results"):
         st.switch_page(search_page)
 
-    compare_urns = get_compare_urns(st.session_state)
-    in_compare = school.identity.urn in compare_urns
-    action_columns = st.columns(2)
-    if action_columns[0].button(
-        "Remove from compare" if in_compare else "Add to compare",
-        key=f"detail-compare-{school.identity.urn}",
-    ):
-        if in_compare:
-            remove_compare_school(st.session_state, school.identity.urn)
-            st.rerun()
-        else:
-            try:
-                add_compare_school(st.session_state, school.identity.urn)
-            except ValueError as exc:
-                st.warning(str(exc))
-            else:
+    search_school = find_school(result, school.identity.urn)
+    if search_school is not None:
+        compare_urns = get_compare_urns(st.session_state)
+        in_compare = school.identity.urn in compare_urns
+        action_columns = st.columns(2)
+        if action_columns[0].button(
+            "Remove from compare" if in_compare else "Add to compare",
+            key=f"detail-compare-{school.identity.urn}",
+        ):
+            if in_compare:
+                remove_compare_school(st.session_state, school.identity.urn)
                 st.rerun()
-    if compare_page is not None and len(get_compare_urns(st.session_state)) >= 2:
-        if action_columns[1].button("Compare selected", key="detail-open-compare"):
-            st.switch_page(compare_page)
+            else:
+                try:
+                    add_compare_school(st.session_state, school.identity.urn)
+                except ValueError as exc:
+                    st.warning(str(exc))
+                else:
+                    st.rerun()
+        if compare_page is not None and len(get_compare_urns(st.session_state)) >= 2:
+            if action_columns[1].button("Compare selected", key="detail-open-compare"):
+                st.switch_page(compare_page)
+    else:
+        st.caption(
+            "This school was reloaded from the current dataset. Run a search containing it "
+            "to calculate distance/match and add it to a comparison."
+        )
 
     st.title(school.identity.name)
     details = [
@@ -854,7 +963,8 @@ def _detail_page(search_page=None, compare_page=None) -> None:
             f"Match score uses {school.preference_score.coverage_pct:.0f}% of the requested preference data."
         )
 
-    benchmarks = relevant_benchmarks(school, result.benchmarks)
+    available_benchmarks = result.benchmarks if result is not None else ()
+    benchmarks = relevant_benchmarks(school, available_benchmarks)
     if benchmarks:
         st.caption("Benchmark columns use the matching local authority and England where available.")
 
@@ -904,6 +1014,22 @@ def _detail_page(search_page=None, compare_page=None) -> None:
 
 
 
+def _with_search_context(
+    school: SchoolResult, search_school: SchoolResult | None
+) -> SchoolResult:
+    """Attach transient distance/match context while keeping freshly loaded school data."""
+    if search_school is None:
+        return school
+    return replace(
+        school,
+        travel=replace(
+            school.travel,
+            distance_miles=search_school.travel.distance_miles,
+        ),
+        preference_score=search_school.preference_score,
+    )
+
+
 def _render_my_school_card(school: SchoolResult, *, detail_page=None) -> None:
     """Render one school saved in the personal shortlist/disposition state."""
     with st.container(border=True):
@@ -937,8 +1063,9 @@ def _render_my_school_card(school: SchoolResult, *, detail_page=None) -> None:
 
 
 def _my_schools_page(search_page=None, detail_page=None) -> None:
-    """Render schools the user has shortlisted or marked as not for them."""
+    """Render saved schools using current details reloaded from the canonical dataset."""
     st.title("My schools")
+    _render_personalisation_storage_controls()
     shortlisted = get_shortlisted_urns(st.session_state)
     rejected = get_rejected_urns(st.session_state)
 
@@ -948,12 +1075,36 @@ def _my_schools_page(search_page=None, detail_page=None) -> None:
             st.switch_page(search_page)
         return
 
+    saved_urns = tuple(dict.fromkeys((*shortlisted, *rejected)))
     result = get_latest_search(st.session_state)
-    schools_by_urn = (
+    search_by_urn = (
         {school.identity.urn: school for school in result.schools}
         if result is not None
         else {}
     )
+
+    # The latest search is the richest context for schools it already contains
+    # (distance, match score, candidate-relative scoring). Only fall back to the
+    # canonical dataset for saved schools that are outside that search.
+    missing_urns = tuple(urn for urn in saved_urns if urn not in search_by_urn)
+    loaded: tuple[SchoolResult, ...] = ()
+    if missing_urns:
+        data_dir = os.environ.get("SCHOOL_FINDER_DATA_DIR", str(DEFAULT_DATA_DIR))
+        try:
+            loaded = _cached_schools_by_urn(data_dir, missing_urns)
+        except (SchoolFinderError, OSError, ImportError, ValueError) as exc:
+            st.warning(f"Could not reload current school details: {exc}")
+
+    current_by_urn = {school.identity.urn: school for school in loaded}
+    schools_by_urn: dict[str, SchoolResult] = {}
+    for urn in saved_urns:
+        search_school = search_by_urn.get(urn)
+        if search_school is not None:
+            schools_by_urn[urn] = search_school
+            continue
+        current = current_by_urn.get(urn)
+        if current is not None:
+            schools_by_urn[urn] = current
 
     def render_section(title: str, urns: tuple[str, ...], empty_message: str) -> None:
         st.subheader(f"{title} ({len(urns)})")
@@ -968,8 +1119,8 @@ def _my_schools_page(search_page=None, detail_page=None) -> None:
             with st.container(border=True):
                 st.markdown(f"### URN {urn}")
                 st.caption(
-                    "This school isn't in your latest search results. "
-                    "Search for it again to restore its current school details here."
+                    "This school could not be found in the current School Finder dataset. "
+                    "It may have closed or changed URN."
                 )
                 _render_personal_summary(urn)
                 _render_personal_disposition(urn, key_prefix="my-schools-missing")
@@ -979,6 +1130,7 @@ def _my_schools_page(search_page=None, detail_page=None) -> None:
 
     if search_page is not None and st.button("← Back to find schools", key="my-schools-back"):
         st.switch_page(search_page)
+
 
 
 def _compare_page(search_page=None, detail_page=None) -> None:
@@ -1073,6 +1225,7 @@ def main() -> None:
         )
 
     st.set_page_config(page_title="School Finder", page_icon="🏫", layout="wide")
+    _sync_personalisation_storage()
 
     pages = {}
     search_page = st.Page(

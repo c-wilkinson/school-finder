@@ -633,3 +633,73 @@ def test_pastoral_refresh_happens_before_filtering_and_ranking(monkeypatch):
     )
     assert result["school_name"].tolist() == ["Initially missing"]
     assert result.iloc[0]["pastoral_score"] == 85
+
+
+def test_get_schools_by_urn_empty_request_needs_no_dataset(tmp_path):
+    assert service.get_schools_by_urn(tmp_path, ["", "   "]) == ()
+
+
+def test_get_schools_by_urn_requires_built_dataset(tmp_path):
+    with pytest.raises(SchoolFinderError, match="Datasets are missing"):
+        service.get_schools_by_urn(tmp_path, ["100001"])
+
+
+def test_get_schools_by_urn_wraps_read_errors(monkeypatch, tmp_path):
+    (tmp_path / "schools.parquet").touch()
+    monkeypatch.setattr(service, "require_pyarrow", lambda: None)
+    monkeypatch.setattr(
+        pd,
+        "read_parquet",
+        lambda *a, **k: (_ for _ in ()).throw(ValueError("broken")),
+    )
+
+    with pytest.raises(SchoolFinderError, match="Could not read"):
+        service.get_schools_by_urn(tmp_path, ["100001"])
+
+
+def test_get_schools_by_urn_returns_empty_for_empty_or_non_matching_frame(monkeypatch, tmp_path):
+    (tmp_path / "schools.parquet").touch()
+    monkeypatch.setattr(service, "require_pyarrow", lambda: None)
+    monkeypatch.setattr(pd, "read_parquet", lambda *a, **k: pd.DataFrame())
+    assert service.get_schools_by_urn(tmp_path, ["100001"]) == ()
+
+    monkeypatch.setattr(
+        pd,
+        "read_parquet",
+        lambda *a, **k: pd.DataFrame([_school_row(urn="999999")]),
+    )
+    assert service.get_schools_by_urn(tmp_path, ["100001"]) == ()
+
+
+def test_get_schools_by_urn_reloads_current_details_in_requested_order(monkeypatch, tmp_path):
+    (tmp_path / "schools.parquet").touch()
+    rows = [
+        _school_row(
+            urn="100002",
+            school_name="Second School",
+            low_age=None,
+            high_age=None,
+            street="Second Road",
+        ),
+        _school_row(
+            urn="100001",
+            school_name="Current School Name",
+            low_age=11,
+            high_age=18,
+            street="Current Road",
+        ),
+        _school_row(urn="999999", school_name="Not requested"),
+    ]
+    monkeypatch.setattr(service, "require_pyarrow", lambda: None)
+    monkeypatch.setattr(pd, "read_parquet", lambda *a, **k: pd.DataFrame(rows))
+
+    schools = service.get_schools_by_urn(
+        tmp_path,
+        [" 100001 ", "100002", "100001", ""],
+    )
+
+    assert [school.identity.urn for school in schools] == ["100001", "100002"]
+    assert schools[0].identity.name == "Current School Name"
+    assert schools[0].identity.age_range == "11–18"
+    assert schools[0].location.address.startswith("Current Road")
+    assert schools[1].identity.age_range is None
