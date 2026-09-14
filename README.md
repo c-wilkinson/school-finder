@@ -59,7 +59,9 @@ school-finder build
 python -m streamlit run streamlit_app.py
 ```
 
-Personal school state is session-only by default. From **My schools**, users can explicitly opt in to **Remember my schools on this device**, which stores only shortlist / not-for-us state, ratings and notes in that browser's local storage. The same page can remove that saved browser copy without clearing the current session.
+Personal school state is session-only by default. From **My schools**, users can explicitly opt in to **Remember my schools on this device**, which stores only shortlist / not-for-us state, ratings and notes in that browser's local storage. Schools with only a saved rating or note remain visible under **Other saved schools**.
+
+**Forget saved personalisation** removes the browser copy but keeps the current session intact. **Clear all personalisation** is a separate confirmed action that removes every shortlist decision, rating and note from both the current session and any saved browser copy. If browser storage is unavailable, School Finder falls back to session-only personalisation rather than failing the app.
 
 ### Output formats
 

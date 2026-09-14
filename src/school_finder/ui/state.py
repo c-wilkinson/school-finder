@@ -109,6 +109,16 @@ def clear_school_personalisation(state: MutableMapping[str, Any], urn: str) -> N
         state.pop(PERSONAL_SCHOOLS_KEY, None)
 
 
+def clear_all_personalisation(state: MutableMapping[str, Any]) -> None:
+    """Remove all parent-specific school state from the current session."""
+    state.pop(PERSONAL_SCHOOLS_KEY, None)
+
+
+def get_personalised_urns(state: MutableMapping[str, Any]) -> tuple[str, ...]:
+    """Return every school URN with saved parent-specific state."""
+    return tuple(get_personal_schools(state))
+
+
 def get_shortlisted_urns(state: MutableMapping[str, Any]) -> tuple[str, ...]:
     """Return URNs explicitly shortlisted by the parent."""
     return tuple(

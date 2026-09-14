@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
 import os
 from pathlib import Path
 
@@ -91,10 +90,12 @@ from school_finder.ui.formatting import (
 from school_finder.ui.state import (
     MAX_COMPARE_SCHOOLS,
     add_compare_school,
+    clear_all_personalisation,
     clear_compare_schools,
     get_compare_urns,
     get_latest_search,
     get_personal_school,
+    get_personalised_urns,
     get_rejected_urns,
     get_shortlisted_urns,
     get_selected_school_urn,
@@ -121,6 +122,8 @@ _WEIGHT_LABELS = {
     PreferenceMetric.EBACC_APS: "EBacc APS",
     PreferenceMetric.PASTORAL_CARE: "Pastoral care",
 }
+
+_CLEAR_PERSONALISATION_CONFIRM_KEY = "school_finder.clear_personalisation_confirm"
 
 
 def _render_personal_disposition(urn: str, *, key_prefix: str) -> None:
@@ -229,7 +232,7 @@ def _comparison_personal_rows(schools: tuple[SchoolResult, ...]) -> list[dict[st
         status = {
             SchoolDisposition.NEUTRAL: "—",
             SchoolDisposition.SHORTLISTED: "♥ Shortlisted",
-            SchoolDisposition.NOT_FOR_US: "Not for us",
+            SchoolDisposition.NOT_FOR_US: "🚫 Not for us",
         }[personal.disposition]
         score = school.preference_score
         rows[0][school.identity.name] = status
@@ -284,7 +287,14 @@ def _sync_personalisation_storage() -> None:
     command = next_storage_command(st.session_state)
     if command is None:
         return
-    response = run_storage_command(st, command)
+    try:
+        response = run_storage_command(st, command)
+    except RuntimeError:
+        response = {
+            "action": command.action,
+            "request_id": command.request_id,
+            "ok": False,
+        }
     handle_storage_response(st.session_state, response)
 
 
@@ -311,6 +321,8 @@ def _render_personalisation_storage_controls() -> None:
         if st.button("Forget saved personalisation", key="forget-personalisation"):
             forget_persistence(st.session_state)
             st.rerun()
+            return
+        _render_clear_all_personalisation_control()
         return
 
     st.caption(
@@ -326,6 +338,48 @@ def _render_personalisation_storage_controls() -> None:
         type="primary",
     ):
         enable_persistence(st.session_state)
+        st.rerun()
+        return
+    _render_clear_all_personalisation_control()
+
+
+def _render_clear_all_personalisation_control() -> None:
+    """Offer a confirmed destructive reset of all personal school state."""
+    if not get_personalised_urns(st.session_state):
+        st.session_state.pop(_CLEAR_PERSONALISATION_CONFIRM_KEY, None)
+        return
+
+    st.markdown("#### Clear personalisation")
+    if st.session_state.get(_CLEAR_PERSONALISATION_CONFIRM_KEY) is not True:
+        st.caption(
+            "Remove every shortlist decision, rating and note from this session and any "
+            "saved browser copy."
+        )
+        if st.button("Clear all personalisation", key="clear-all-personalisation"):
+            st.session_state[_CLEAR_PERSONALISATION_CONFIRM_KEY] = True
+            st.rerun()
+        return
+
+    st.warning(
+        "This will permanently remove all shortlist / not-for-us decisions, ratings and "
+        "notes from this session and this browser."
+    )
+    actions = st.columns(2)
+    if actions[0].button(
+        "Yes, clear everything",
+        key="confirm-clear-all-personalisation",
+        type="primary",
+    ):
+        clear_all_personalisation(st.session_state)
+        forget_persistence(st.session_state)
+        st.session_state.pop(_CLEAR_PERSONALISATION_CONFIRM_KEY, None)
+        st.rerun()
+        return
+    if actions[1].button(
+        "Cancel",
+        key="cancel-clear-all-personalisation",
+    ):
+        st.session_state.pop(_CLEAR_PERSONALISATION_CONFIRM_KEY, None)
         st.rerun()
 
 
@@ -584,9 +638,9 @@ def _render_results(
     if result.request.preferences is not None:
         st.caption("Schools are ranked using your selected preferences. Missing data is not treated as zero.")
 
-    shortlisted_count = len(get_shortlisted_urns(st.session_state))
+    personalised_count = len(get_personalised_urns(st.session_state))
     if my_schools_page is not None and st.button(
-        f"My schools ({shortlisted_count})",
+        f"My schools ({personalised_count})",
         key="open-my-schools",
     ):
         st.switch_page(my_schools_page)
@@ -1012,24 +1066,6 @@ def _detail_page(search_page=None, compare_page=None) -> None:
     with tabs[8]:
         _render_personal_view(school.identity.urn)
 
-
-
-def _with_search_context(
-    school: SchoolResult, search_school: SchoolResult | None
-) -> SchoolResult:
-    """Attach transient distance/match context while keeping freshly loaded school data."""
-    if search_school is None:
-        return school
-    return replace(
-        school,
-        travel=replace(
-            school.travel,
-            distance_miles=search_school.travel.distance_miles,
-        ),
-        preference_score=search_school.preference_score,
-    )
-
-
 def _render_my_school_card(school: SchoolResult, *, detail_page=None) -> None:
     """Render one school saved in the personal shortlist/disposition state."""
     with st.container(border=True):
@@ -1066,16 +1102,22 @@ def _my_schools_page(search_page=None, detail_page=None) -> None:
     """Render saved schools using current details reloaded from the canonical dataset."""
     st.title("My schools")
     _render_personalisation_storage_controls()
+    personalised = get_personalised_urns(st.session_state)
     shortlisted = get_shortlisted_urns(st.session_state)
     rejected = get_rejected_urns(st.session_state)
+    disposition_urns = set((*shortlisted, *rejected))
+    other = tuple(urn for urn in personalised if urn not in disposition_urns)
 
-    if not shortlisted and not rejected:
-        st.info("You haven't shortlisted any schools or marked any as not for us yet.")
+    if not personalised:
+        st.info(
+            "You haven't saved any schools yet. Search for schools and use Shortlist / "
+            "Not for us, or add a rating or note from School detail."
+        )
         if search_page is not None and st.button("← Find schools"):
             st.switch_page(search_page)
         return
 
-    saved_urns = tuple(dict.fromkeys((*shortlisted, *rejected)))
+    saved_urns = personalised
     result = get_latest_search(st.session_state)
     search_by_urn = (
         {school.identity.urn: school for school in result.schools}
@@ -1127,6 +1169,11 @@ def _my_schools_page(search_page=None, detail_page=None) -> None:
 
     render_section("Shortlisted", shortlisted, "No schools are currently shortlisted.")
     render_section("Not for us", rejected, 'No schools are currently marked "Not for us".')
+    render_section(
+        "Other saved schools",
+        other,
+        "No other schools currently have saved ratings or notes.",
+    )
 
     if search_page is not None and st.button("← Back to find schools", key="my-schools-back"):
         st.switch_page(search_page)

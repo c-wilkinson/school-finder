@@ -240,6 +240,31 @@ def test_clear_school_personalisation_removes_only_requested_school():
         clear_school_personalisation(state, "")
 
 
+def test_all_personalisation_helpers_include_rating_only_schools_and_can_clear_everything():
+    from school_finder.models.personalisation import SchoolDisposition
+    from school_finder.ui.state import (
+        PERSONAL_SCHOOLS_KEY,
+        clear_all_personalisation,
+        get_personalised_urns,
+        set_school_disposition,
+        set_school_notes,
+        set_school_rating,
+    )
+
+    state = {}
+    assert get_personalised_urns(state) == ()
+
+    set_school_disposition(state, "100001", SchoolDisposition.SHORTLISTED)
+    set_school_rating(state, "100002", 4)
+    set_school_notes(state, "100003", "Worth another look")
+    assert get_personalised_urns(state) == ("100001", "100002", "100003")
+
+    clear_all_personalisation(state)
+    clear_all_personalisation(state)
+    assert PERSONAL_SCHOOLS_KEY not in state
+    assert get_personalised_urns(state) == ()
+
+
 def test_personal_school_state_survives_new_and_cleared_searches():
     from school_finder.models.personalisation import PersonalSchoolState, SchoolDisposition
     from school_finder.ui.state import (

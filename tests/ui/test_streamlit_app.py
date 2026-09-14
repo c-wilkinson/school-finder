@@ -1404,6 +1404,23 @@ def test_render_results_my_schools_button_opens_page(monkeypatch):
     assert ("switch_page", my_schools_page) in fake.calls
 
 
+def test_render_results_my_schools_count_includes_non_disposition_personalisation(monkeypatch):
+    from school_finder.ui.state import set_school_rating
+
+    result = _result()
+    my_schools_page = object()
+    fake = FakeStreamlit({"My schools (1)": True})
+    set_school_rating(fake.session_state, "100001", 4)
+    monkeypatch.setattr(streamlit_app, "st", fake)
+
+    streamlit_app._render_results(result, my_schools_page=my_schools_page)
+
+    assert any(
+        call[0] == "button" and call[1] == "My schools (1)" for call in fake.calls
+    )
+    assert ("switch_page", my_schools_page) in fake.calls
+
+
 def test_my_schools_page_empty_can_return_to_search(monkeypatch):
     search_page = object()
     fake = FakeStreamlit({"← Find schools": True})
@@ -1411,7 +1428,7 @@ def test_my_schools_page_empty_can_return_to_search(monkeypatch):
 
     streamlit_app._my_schools_page(search_page=search_page)
 
-    assert any(call[0] == "info" and "haven't shortlisted" in call[1] for call in fake.calls)
+    assert any(call[0] == "info" and "haven't saved any schools" in call[1] for call in fake.calls)
     assert ("switch_page", search_page) in fake.calls
 
 
@@ -1482,6 +1499,29 @@ def test_my_schools_page_reloads_saved_school_without_latest_search(monkeypatch)
     assert ("caption", "No schools are currently shortlisted.") in fake.calls
 
 
+def test_my_schools_page_keeps_rating_only_school_visible(monkeypatch):
+    from school_finder.ui.state import set_school_notes, set_school_rating
+
+    fake = FakeStreamlit()
+    fake.session_state[LATEST_SEARCH_KEY] = _result()
+    set_school_rating(fake.session_state, "100001", 4)
+    set_school_notes(fake.session_state, "100001", "Keep this visible")
+    monkeypatch.setattr(streamlit_app, "st", fake)
+
+    streamlit_app._my_schools_page()
+
+    assert ("subheader", "Other saved schools (1)") in fake.calls
+    assert ("markdown", "### Example School") in fake.calls
+    assert any(
+        call[0] == "caption" and call[1] == "My rating: ★★★★☆ (4/5)"
+        for call in fake.calls
+    )
+    assert any(
+        call[0] == "caption" and call[1] == "My notes: Keep this visible"
+        for call in fake.calls
+    )
+
+
 def test_render_my_school_card_can_open_details(monkeypatch):
     detail_page = object()
     fake = FakeStreamlit({"View details": True})
@@ -1514,7 +1554,7 @@ def test_my_schools_page_empty_without_search_page(monkeypatch):
 
     streamlit_app._my_schools_page()
 
-    assert any(call[0] == "info" and "haven't shortlisted" in call[1] for call in fake.calls)
+    assert any(call[0] == "info" and "haven't saved any schools" in call[1] for call in fake.calls)
 
 
 
@@ -1711,7 +1751,7 @@ def test_comparison_personal_rows_show_status_rating_match_and_missing_score(mon
     assert rows[0] == {
         "My view": "Status",
         "Example School": "♥ Shortlisted",
-        "Second School": "Not for us",
+        "Second School": "🚫 Not for us",
         "Third School": "—",
     }
     assert rows[1]["Example School"] == "★★★★☆ (4/5)"
@@ -1808,6 +1848,34 @@ def test_sync_personalisation_storage_applies_browser_response(monkeypatch):
     streamlit_app._sync_personalisation_storage()
 
     assert fake.session_state[PERSISTENCE_HYDRATED_KEY] is True
+
+
+def test_sync_personalisation_storage_degrades_to_session_only_if_component_unavailable(monkeypatch):
+    from school_finder.models.personalisation import SchoolDisposition
+    from school_finder.ui.personalisation_storage import (
+        PERSISTENCE_ENABLED_KEY,
+        PERSISTENCE_HYDRATED_KEY,
+        PERSISTENCE_WARNING_KEY,
+    )
+    from school_finder.ui.state import get_personal_school, set_school_disposition
+
+    fake = FakeStreamlit()
+    set_school_disposition(fake.session_state, "100001", SchoolDisposition.SHORTLISTED)
+    monkeypatch.setattr(streamlit_app, "st", fake)
+
+    def unavailable(*_):
+        raise RuntimeError("component unavailable")
+
+    monkeypatch.setattr(streamlit_app, "run_storage_command", unavailable)
+    streamlit_app._sync_personalisation_storage()
+
+    assert fake.session_state[PERSISTENCE_HYDRATED_KEY] is True
+    assert fake.session_state[PERSISTENCE_ENABLED_KEY] is False
+    assert "could not be read" in fake.session_state[PERSISTENCE_WARNING_KEY]
+    assert (
+        get_personal_school(fake.session_state, "100001").disposition
+        is SchoolDisposition.SHORTLISTED
+    )
 
 
 def test_personalisation_storage_controls_wait_for_initial_browser_check(monkeypatch):
@@ -1910,6 +1978,111 @@ def test_personalisation_storage_controls_forget_saved_copy_but_keep_session(mon
     assert ("rerun",) in fake.calls
 
 
+def test_personalisation_storage_controls_clear_all_requires_confirmation(monkeypatch):
+    from school_finder.models.personalisation import SchoolDisposition
+    from school_finder.ui.personalisation_storage import PERSISTENCE_HYDRATED_KEY
+    from school_finder.ui.state import get_personal_school, set_school_disposition
+
+    fake = FakeStreamlit({"Clear all personalisation": True})
+    fake.session_state[PERSISTENCE_HYDRATED_KEY] = True
+    set_school_disposition(fake.session_state, "100001", SchoolDisposition.SHORTLISTED)
+    monkeypatch.setattr(streamlit_app, "st", fake)
+
+    streamlit_app._render_personalisation_storage_controls()
+
+    assert fake.session_state[streamlit_app._CLEAR_PERSONALISATION_CONFIRM_KEY] is True
+    assert get_personal_school(fake.session_state, "100001").disposition is SchoolDisposition.SHORTLISTED
+    assert ("rerun",) in fake.calls
+
+
+def test_clear_all_personalisation_control_can_be_left_unpressed(monkeypatch):
+    from school_finder.models.personalisation import SchoolDisposition
+    from school_finder.ui.state import get_personal_school, set_school_disposition
+
+    fake = FakeStreamlit()
+    set_school_disposition(fake.session_state, "100001", SchoolDisposition.SHORTLISTED)
+    monkeypatch.setattr(streamlit_app, "st", fake)
+
+    streamlit_app._render_clear_all_personalisation_control()
+
+    assert (
+        get_personal_school(fake.session_state, "100001").disposition
+        is SchoolDisposition.SHORTLISTED
+    )
+    assert streamlit_app._CLEAR_PERSONALISATION_CONFIRM_KEY not in fake.session_state
+    assert ("rerun",) not in fake.calls
+
+
+def test_personalisation_storage_controls_confirm_clear_removes_session_and_browser_copy(monkeypatch):
+    from school_finder.models.personalisation import SchoolDisposition
+    from school_finder.ui.personalisation_storage import (
+        PERSISTENCE_CLEAR_PENDING_KEY,
+        PERSISTENCE_ENABLED_KEY,
+        PERSISTENCE_HYDRATED_KEY,
+    )
+    from school_finder.ui.state import get_personalised_urns, set_school_disposition
+
+    fake = FakeStreamlit({"Yes, clear everything": True})
+    fake.session_state.update(
+        {
+            PERSISTENCE_HYDRATED_KEY: True,
+            PERSISTENCE_ENABLED_KEY: True,
+            streamlit_app._CLEAR_PERSONALISATION_CONFIRM_KEY: True,
+        }
+    )
+    set_school_disposition(fake.session_state, "100001", SchoolDisposition.SHORTLISTED)
+    monkeypatch.setattr(streamlit_app, "st", fake)
+
+    streamlit_app._render_personalisation_storage_controls()
+
+    assert get_personalised_urns(fake.session_state) == ()
+    assert fake.session_state[PERSISTENCE_ENABLED_KEY] is False
+    assert fake.session_state[PERSISTENCE_CLEAR_PENDING_KEY] is True
+    assert streamlit_app._CLEAR_PERSONALISATION_CONFIRM_KEY not in fake.session_state
+    assert ("rerun",) in fake.calls
+
+
+def test_personalisation_storage_controls_cancel_clear_keeps_personalisation(monkeypatch):
+    from school_finder.models.personalisation import SchoolDisposition
+    from school_finder.ui.personalisation_storage import PERSISTENCE_HYDRATED_KEY
+    from school_finder.ui.state import get_personal_school, set_school_disposition
+
+    fake = FakeStreamlit({"Cancel": True})
+    fake.session_state.update(
+        {
+            PERSISTENCE_HYDRATED_KEY: True,
+            streamlit_app._CLEAR_PERSONALISATION_CONFIRM_KEY: True,
+        }
+    )
+    set_school_disposition(fake.session_state, "100001", SchoolDisposition.SHORTLISTED)
+    monkeypatch.setattr(streamlit_app, "st", fake)
+
+    streamlit_app._render_personalisation_storage_controls()
+
+    assert get_personal_school(fake.session_state, "100001").disposition is SchoolDisposition.SHORTLISTED
+    assert streamlit_app._CLEAR_PERSONALISATION_CONFIRM_KEY not in fake.session_state
+    assert ("rerun",) in fake.calls
+
+
+def test_clear_all_personalisation_confirmation_can_be_left_open(monkeypatch):
+    from school_finder.models.personalisation import SchoolDisposition
+    from school_finder.ui.state import get_personal_school, set_school_disposition
+
+    fake = FakeStreamlit()
+    fake.session_state[streamlit_app._CLEAR_PERSONALISATION_CONFIRM_KEY] = True
+    set_school_disposition(fake.session_state, "100001", SchoolDisposition.SHORTLISTED)
+    monkeypatch.setattr(streamlit_app, "st", fake)
+
+    streamlit_app._render_clear_all_personalisation_control()
+
+    assert (
+        get_personal_school(fake.session_state, "100001").disposition
+        is SchoolDisposition.SHORTLISTED
+    )
+    assert fake.session_state[streamlit_app._CLEAR_PERSONALISATION_CONFIRM_KEY] is True
+    assert ("rerun",) not in fake.calls
+
+
 def test_my_schools_page_always_exposes_browser_persistence_controls(monkeypatch):
     from school_finder.ui.personalisation_storage import PERSISTENCE_HYDRATED_KEY
 
@@ -1926,23 +2099,6 @@ def test_my_schools_page_always_exposes_browser_persistence_controls(monkeypatch
     )
 
 
-def test_with_search_context_preserves_current_data_and_adds_transient_match():
-    current = replace(
-        _school(score=None),
-        identity=replace(_school().identity, name="Current name"),
-        travel=TravelInformation(),
-    )
-    search_school = replace(
-        _school(score=91.0),
-        identity=replace(_school().identity, name="Old search name"),
-        travel=TravelInformation(distance_miles=2.75),
-    )
-
-    assert streamlit_app._with_search_context(current, None) is current
-    merged = streamlit_app._with_search_context(current, search_school)
-    assert merged.identity.name == "Current name"
-    assert merged.travel.distance_miles == 2.75
-    assert merged.preference_score.overall == 91.0
 
 
 def test_detail_page_reloads_saved_school_not_in_latest_search(monkeypatch):
