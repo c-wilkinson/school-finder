@@ -136,3 +136,159 @@ def test_new_search_prunes_comparison_selection():
     )
     set_latest_search(state, empty)
     assert COMPARE_URNS_KEY not in state
+
+
+def test_personal_school_state_helpers_round_trip_and_filter_invalid_state():
+    from school_finder.models.personalisation import PersonalSchoolState, SchoolDisposition
+    from school_finder.ui.state import (
+        PERSONAL_SCHOOLS_KEY,
+        get_personal_school,
+        get_personal_schools,
+        get_rejected_urns,
+        get_shortlisted_urns,
+        set_school_disposition,
+        set_school_notes,
+        set_school_rating,
+    )
+
+    assert get_personal_schools({PERSONAL_SCHOOLS_KEY: "bad"}) == {}
+    shortlisted = PersonalSchoolState(SchoolDisposition.SHORTLISTED)
+    rejected = PersonalSchoolState(SchoolDisposition.NOT_FOR_US)
+    state = {
+        PERSONAL_SCHOOLS_KEY: {
+            " 100001 ": shortlisted,
+            "100002": rejected,
+            "": shortlisted,
+            123: shortlisted,
+            "100003": "bad",
+        }
+    }
+    assert get_personal_schools(state) == {
+        "100001": shortlisted,
+        "100002": rejected,
+    }
+    assert get_shortlisted_urns(state) == ("100001",)
+    assert get_rejected_urns(state) == ("100002",)
+    assert get_personal_school(state, " 100001 ") == shortlisted
+    assert get_personal_school(state, "999999").is_default is True
+
+    state = {}
+    changed = set_school_disposition(state, " 100001 ", "shortlisted")
+    assert changed.disposition is SchoolDisposition.SHORTLISTED
+    changed = set_school_rating(state, "100001", 5)
+    assert changed.rating == 5
+    changed = set_school_notes(state, "100001", "  Great visit  ")
+    assert changed.notes == "Great visit"
+    assert get_personal_school(state, "100001") == changed
+
+    changed = set_school_disposition(state, "100001", SchoolDisposition.NOT_FOR_US)
+    assert changed.disposition is SchoolDisposition.NOT_FOR_US
+    assert changed.rating == 5
+    assert changed.notes == "Great visit"
+
+    with pytest.raises(ValueError, match="is not a valid SchoolDisposition"):
+        set_school_disposition(state, "100001", "maybe")
+    with pytest.raises(ValueError, match="integer from 1 to 5"):
+        set_school_rating(state, "100001", 0)
+    with pytest.raises(ValueError, match="urn is required"):
+        get_personal_school(state, "   ")
+
+
+def test_personal_school_fields_can_be_cleared_without_losing_other_fields():
+    from school_finder.models.personalisation import SchoolDisposition
+    from school_finder.ui.state import (
+        PERSONAL_SCHOOLS_KEY,
+        get_personal_school,
+        set_school_disposition,
+        set_school_notes,
+        set_school_rating,
+    )
+
+    state = {}
+    set_school_disposition(state, "100001", SchoolDisposition.SHORTLISTED)
+    set_school_rating(state, "100001", 4)
+    set_school_notes(state, "100001", "Visit notes")
+
+    assert set_school_rating(state, "100001", None).notes == "Visit notes"
+    assert set_school_notes(state, "100001", "   ").disposition is SchoolDisposition.SHORTLISTED
+    neutral = set_school_disposition(state, "100001", SchoolDisposition.NEUTRAL)
+    assert neutral.is_default is True
+    assert PERSONAL_SCHOOLS_KEY not in state
+    assert get_personal_school(state, "100001").is_default is True
+
+
+def test_clear_school_personalisation_removes_only_requested_school():
+    from school_finder.models.personalisation import SchoolDisposition
+    from school_finder.ui.state import (
+        PERSONAL_SCHOOLS_KEY,
+        clear_school_personalisation,
+        get_personal_schools,
+        set_school_disposition,
+    )
+
+    state = {}
+    set_school_disposition(state, "100001", SchoolDisposition.SHORTLISTED)
+    set_school_disposition(state, "100002", SchoolDisposition.NOT_FOR_US)
+
+    clear_school_personalisation(state, "100001")
+    assert tuple(get_personal_schools(state)) == ("100002",)
+    clear_school_personalisation(state, "100001")
+    clear_school_personalisation(state, "100002")
+    assert PERSONAL_SCHOOLS_KEY not in state
+
+    with pytest.raises(ValueError, match="urn is required"):
+        clear_school_personalisation(state, "")
+
+
+def test_all_personalisation_helpers_include_rating_only_schools_and_can_clear_everything():
+    from school_finder.models.personalisation import SchoolDisposition
+    from school_finder.ui.state import (
+        PERSONAL_SCHOOLS_KEY,
+        clear_all_personalisation,
+        get_personalised_urns,
+        set_school_disposition,
+        set_school_notes,
+        set_school_rating,
+    )
+
+    state = {}
+    assert get_personalised_urns(state) == ()
+
+    set_school_disposition(state, "100001", SchoolDisposition.SHORTLISTED)
+    set_school_rating(state, "100002", 4)
+    set_school_notes(state, "100003", "Worth another look")
+    assert get_personalised_urns(state) == ("100001", "100002", "100003")
+
+    clear_all_personalisation(state)
+    clear_all_personalisation(state)
+    assert PERSONAL_SCHOOLS_KEY not in state
+    assert get_personalised_urns(state) == ()
+
+
+def test_personal_school_state_survives_new_and_cleared_searches():
+    from school_finder.models.personalisation import PersonalSchoolState, SchoolDisposition
+    from school_finder.ui.state import (
+        PERSONAL_SCHOOLS_KEY,
+        clear_latest_search,
+        get_personal_school,
+        set_school_disposition,
+        set_school_notes,
+    )
+
+    state = {}
+    set_school_disposition(state, "999999", SchoolDisposition.SHORTLISTED)
+    set_school_notes(state, "999999", "Keep this even when it is outside the next search")
+    expected = get_personal_school(state, "999999")
+
+    keep = SchoolResult(identity=SchoolIdentity("100001", "Current result"))
+    result = SchoolSearchResult(
+        request=SchoolSearchRequest("SW1A 2AA"),
+        postcode=PostcodeLocation("SW1A 2AA", 1, 2, True, None),
+        schools=(keep,),
+    )
+    set_latest_search(state, result)
+    assert get_personal_school(state, "999999") == expected
+
+    clear_latest_search(state)
+    assert state == {PERSONAL_SCHOOLS_KEY: {"999999": expected}}
+    assert isinstance(expected, PersonalSchoolState)

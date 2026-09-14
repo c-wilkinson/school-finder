@@ -8,6 +8,8 @@
 
 School Finder combines several public datasets into one structured local dataset, with reusable search and scoring logic that can be consumed from the CLI or directly from Python.
 
+**Try the live web app:** [https://school-finder.streamlit.app/](https://school-finder.streamlit.app/)
+
 The longer-term aim is for the same core to power a Streamlit web app, public API and MCP server.
 
 ## Why this exists
@@ -56,6 +58,10 @@ python -m pip install -e ".[web]"
 school-finder build
 python -m streamlit run streamlit_app.py
 ```
+
+Personal school state is session-only by default. From **My schools**, users can explicitly opt in to **Remember my schools on this device**, which stores only shortlist / not-for-us state, ratings and notes in that browser's local storage. Schools with only a saved rating or note remain visible under **Other saved schools**.
+
+**Forget saved personalisation** removes the browser copy but keeps the current session intact. **Clear all personalisation** is a separate confirmed action that removes every shortlist decision, rating and note from both the current session and any saved browser copy. If browser storage is unavailable, School Finder falls back to session-only personalisation rather than failing the app.
 
 ### Output formats
 

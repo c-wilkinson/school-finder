@@ -2,15 +2,139 @@
 
 from __future__ import annotations
 
-from collections.abc import MutableMapping
+from collections.abc import Mapping, MutableMapping
+from dataclasses import replace
 from typing import Any
 
+from school_finder.models.personalisation import PersonalSchoolState, SchoolDisposition
 from school_finder.models.search import SchoolSearchResult
 
 LATEST_SEARCH_KEY = "school_finder.latest_search"
 SELECTED_SCHOOL_URN_KEY = "school_finder.selected_school_urn"
 COMPARE_URNS_KEY = "school_finder.compare_urns"
+PERSONAL_SCHOOLS_KEY = "school_finder.personal_schools"
 MAX_COMPARE_SCHOOLS = 4
+
+
+def _required_urn(urn: str) -> str:
+    selected = str(urn).strip()
+    if not selected:
+        raise ValueError("urn is required.")
+    return selected
+
+
+def get_personal_schools(
+    state: MutableMapping[str, Any],
+) -> dict[str, PersonalSchoolState]:
+    """Return valid parent-specific school states, keyed by normalised URN."""
+    value = state.get(PERSONAL_SCHOOLS_KEY, {})
+    if not isinstance(value, Mapping):
+        return {}
+    personal: dict[str, PersonalSchoolState] = {}
+    for urn, school_state in value.items():
+        if not isinstance(urn, str) or not urn.strip():
+            continue
+        if isinstance(school_state, PersonalSchoolState):
+            personal[urn.strip()] = school_state
+    return personal
+
+
+def get_personal_school(
+    state: MutableMapping[str, Any], urn: str
+) -> PersonalSchoolState:
+    """Return parent-specific state for one school, defaulting to neutral."""
+    selected = _required_urn(urn)
+    return get_personal_schools(state).get(selected, PersonalSchoolState())
+
+
+def _store_personal_school(
+    state: MutableMapping[str, Any], urn: str, school_state: PersonalSchoolState
+) -> PersonalSchoolState:
+    personal = get_personal_schools(state)
+    if school_state.is_default:
+        personal.pop(urn, None)
+    else:
+        personal[urn] = school_state
+    if personal:
+        state[PERSONAL_SCHOOLS_KEY] = personal
+    else:
+        state.pop(PERSONAL_SCHOOLS_KEY, None)
+    return school_state
+
+
+def set_school_disposition(
+    state: MutableMapping[str, Any],
+    urn: str,
+    disposition: SchoolDisposition | str,
+) -> PersonalSchoolState:
+    """Set whether a school is neutral, shortlisted, or not for this family."""
+    selected = _required_urn(urn)
+    resolved = (
+        disposition
+        if isinstance(disposition, SchoolDisposition)
+        else SchoolDisposition(disposition)
+    )
+    current = get_personal_school(state, selected)
+    return _store_personal_school(
+        state, selected, replace(current, disposition=resolved)
+    )
+
+
+def set_school_rating(
+    state: MutableMapping[str, Any], urn: str, rating: int | None
+) -> PersonalSchoolState:
+    """Set or clear a parent's 1-5 rating for a school."""
+    selected = _required_urn(urn)
+    current = get_personal_school(state, selected)
+    return _store_personal_school(state, selected, replace(current, rating=rating))
+
+
+def set_school_notes(
+    state: MutableMapping[str, Any], urn: str, notes: str | None
+) -> PersonalSchoolState:
+    """Set or clear free-text notes for a school."""
+    selected = _required_urn(urn)
+    current = get_personal_school(state, selected)
+    return _store_personal_school(state, selected, replace(current, notes=notes))
+
+
+def clear_school_personalisation(state: MutableMapping[str, Any], urn: str) -> None:
+    """Remove all parent-specific state for one school."""
+    selected = _required_urn(urn)
+    personal = get_personal_schools(state)
+    personal.pop(selected, None)
+    if personal:
+        state[PERSONAL_SCHOOLS_KEY] = personal
+    else:
+        state.pop(PERSONAL_SCHOOLS_KEY, None)
+
+
+def clear_all_personalisation(state: MutableMapping[str, Any]) -> None:
+    """Remove all parent-specific school state from the current session."""
+    state.pop(PERSONAL_SCHOOLS_KEY, None)
+
+
+def get_personalised_urns(state: MutableMapping[str, Any]) -> tuple[str, ...]:
+    """Return every school URN with saved parent-specific state."""
+    return tuple(get_personal_schools(state))
+
+
+def get_shortlisted_urns(state: MutableMapping[str, Any]) -> tuple[str, ...]:
+    """Return URNs explicitly shortlisted by the parent."""
+    return tuple(
+        urn
+        for urn, school_state in get_personal_schools(state).items()
+        if school_state.disposition is SchoolDisposition.SHORTLISTED
+    )
+
+
+def get_rejected_urns(state: MutableMapping[str, Any]) -> tuple[str, ...]:
+    """Return URNs explicitly marked as not for this family."""
+    return tuple(
+        urn
+        for urn, school_state in get_personal_schools(state).items()
+        if school_state.disposition is SchoolDisposition.NOT_FOR_US
+    )
 
 
 def get_latest_search(state: MutableMapping[str, Any]) -> SchoolSearchResult | None:
@@ -37,9 +161,7 @@ def get_compare_urns(state: MutableMapping[str, Any]) -> tuple[str, ...]:
 
 def add_compare_school(state: MutableMapping[str, Any], urn: str) -> tuple[str, ...]:
     """Add a school to the comparison selection (maximum four)."""
-    selected = str(urn).strip()
-    if not selected:
-        raise ValueError("urn is required.")
+    selected = _required_urn(urn)
     urns = list(get_compare_urns(state))
     if selected not in urns:
         if len(urns) >= MAX_COMPARE_SCHOOLS:
@@ -73,9 +195,7 @@ def get_selected_school_urn(state: MutableMapping[str, Any]) -> str | None:
 
 def select_school(state: MutableMapping[str, Any], urn: str) -> str:
     """Select a school for inspection in the detail view."""
-    selected = str(urn).strip()
-    if not selected:
-        raise ValueError("urn is required.")
+    selected = _required_urn(urn)
     state[SELECTED_SCHOOL_URN_KEY] = selected
     return selected
 
