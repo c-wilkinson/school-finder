@@ -21,6 +21,7 @@ from school_finder.models.filters import (
 from school_finder.models.preferences import PreferenceMetric, PreferencePreset
 from school_finder.models.school import (
     AcademicPerformance,
+    AdmissionsInformation,
     AttendanceStatistics,
     BehaviourStatistics,
     DestinationStatistics,
@@ -443,6 +444,41 @@ def test_render_school_card_shows_metrics_website_context_and_coverage(monkeypat
     assert any(call[1] == "Progress 8" and "0 is broadly average" in call[3]["help"] for call in metric_calls)
 
 
+def test_render_school_card_shows_admissions_demand(monkeypatch):
+    fake = FakeStreamlit()
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    school = replace(
+        _school(),
+        admissions=AdmissionsInformation(
+            data_year="2026",
+            first_preferences_per_offer=1.24,
+            demand_band="High",
+        ),
+    )
+    result = _result(schools=[school])
+
+    streamlit_app._render_school_card(1, school, result)
+
+    assert any(
+        call[0] == "caption"
+        and call[1] == "Admissions demand: High • 1.24 first preferences per offer (2026 entry)"
+        for call in fake.calls
+    )
+
+
+def test_render_school_card_shows_demand_band_without_optional_context(monkeypatch):
+    fake = FakeStreamlit()
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    school = replace(
+        _school(),
+        admissions=AdmissionsInformation(demand_band="Moderate"),
+    )
+
+    streamlit_app._render_school_card(1, school, _result(schools=[school]))
+
+    assert ("caption", "Admissions demand: Moderate") in fake.calls
+
+
 def test_render_school_card_handles_no_website_score_or_benchmark(monkeypatch):
     fake = FakeStreamlit()
     monkeypatch.setattr(streamlit_app, "st", fake)
@@ -808,6 +844,44 @@ def test_render_ofsted_explains_equivalents_and_linked_source(monkeypatch):
     assert ("info", "My explanation") in fake.calls
 
 
+def test_render_admissions_shows_latest_data_context_and_predecessor(monkeypatch):
+    fake = FakeStreamlit()
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    school = replace(
+        _school(),
+        admissions=AdmissionsInformation(
+            data_year="2026",
+            first_preferences=240,
+            total_offers=200,
+            first_preferences_per_offer=1.2,
+            demand_percentile=82.0,
+            demand_band="High",
+            source_school_name="Predecessor School",
+            source_urn="999999",
+        ),
+    )
+
+    streamlit_app._render_admissions(school)
+
+    assert ("caption", "Admissions data: 2026 entry") in fake.calls
+    assert any(call[0] == "info" and "not a probability of admission" in call[1] for call in fake.calls)
+    assert any(call[0] == "caption" and "Predecessor School (URN 999999)" in call[1] for call in fake.calls)
+
+
+def test_render_admissions_handles_missing_demand_and_predecessor_urn(monkeypatch):
+    fake = FakeStreamlit()
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    school = replace(
+        _school(),
+        admissions=AdmissionsInformation(source_school_name="Predecessor School"),
+    )
+
+    streamlit_app._render_admissions(school)
+
+    assert any(call[0] == "caption" and "not a child's chance of admission" in call[1] for call in fake.calls)
+    assert any(call[0] == "caption" and call[1] == "Admissions history source: Predecessor School." for call in fake.calls)
+
+
 def test_render_pastoral_staffing_and_destinations_show_metadata(monkeypatch):
     fake = FakeStreamlit()
     monkeypatch.setattr(streamlit_app, "st", fake)
@@ -894,6 +968,7 @@ def test_detail_page_with_selected_school_renders_every_section(monkeypatch):
     tabs = next(call for call in fake.calls if call[0] == "tabs")
     assert tabs[1] == (
         "Overview",
+        "Admissions",
         "Academics",
         "Subjects",
         "Ofsted",

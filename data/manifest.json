@@ -1,6 +1,6 @@
 {
   "coverage": "England",
-  "dataset_version": "gias-2026-09-14__onspd-2026-08",
+  "dataset_version": "gias-2026-09-15__onspd-2026-08",
   "files": {
     "benchmark_history.parquet": {
       "bytes": 429121,
@@ -113,7 +113,7 @@
         "source_link_depth"
       ],
       "rows": 8166179,
-      "sha256": "4fed9a69193222537764cd009d64a69dfea0d158fe2179c60f2f4c041f306ff9"
+      "sha256": "afc1678f9274cee2a87f8ca1ba6bd0f74358c4b65e121280a6283697519abcfd"
     },
     "postcodes.parquet": {
       "bytes": 63252765,
@@ -134,7 +134,7 @@
       "sha256": "a2fdc3559da5b49464b6f84c02158d241dd9592561931e62adc81cd012539aee"
     },
     "schools.parquet": {
-      "bytes": 5316332,
+      "bytes": 5328824,
       "columns": [
         "urn",
         "school_name",
@@ -269,6 +269,26 @@
         "destination_source_school_name",
         "destination_source_kind",
         "destination_source_link_depth",
+        "admission_year",
+        "first_preferences",
+        "second_preferences",
+        "third_preferences",
+        "total_preferences",
+        "first_preference_offers",
+        "second_preference_offers",
+        "third_preference_offers",
+        "total_offers",
+        "outside_la_preferences",
+        "outside_la_offers",
+        "first_preferences_per_offer",
+        "admissions_demand_percentile",
+        "admissions_demand_band",
+        "admissions_source",
+        "admissions_source_url",
+        "admissions_source_urn",
+        "admissions_source_school_name",
+        "admissions_source_kind",
+        "admissions_source_link_depth",
         "pastoral_response_count",
         "happy_pct",
         "safe_pct",
@@ -290,7 +310,7 @@
         "pastoral_source_url"
       ],
       "rows": 26479,
-      "sha256": "ebae5c733cfc996f9af4562d240cb391813935bf1996baa0e68435b07e2fc429"
+      "sha256": "2e88e3b73cc81325bc3e049fd67154f274ff61bbee62009e91a2912972c49720"
     },
     "subjects.parquet": {
       "bytes": 1037294,
@@ -314,9 +334,14 @@
       "sha256": "e74d0435fa84e793675db7528586246d3b99c323d106e104108639d410a6cf15"
     }
   },
-  "generated_at": "2026-09-14T20:29:32.601792Z",
-  "schema_version": 9,
+  "generated_at": "2026-09-15T22:12:15.235507Z",
+  "schema_version": 10,
   "sources": {
+    "admissions_school": {
+      "download_url": "https://content.explore-education-statistics.service.gov.uk/api/releases/0bf4f9cf-721d-44e3-8473-266c87e17e00/files/42d0d4e4-9604-413a-8275-00b829ffbdcb",
+      "name": "DfE school applications and offers - school level",
+      "release_label": "School level applications and offers 2026 (2014 to 2026)"
+    },
     "attendance_benchmarks": {
       "download_url": "https://explore-education-statistics.service.gov.uk/data-catalogue/data-set/d37f27c4-cca2-4274-97e9-1cdcb4ecad18/csv",
       "name": "DfE pupil absence benchmarks",
@@ -353,14 +378,14 @@
       "release_label": "EES dataset 7be58881-d49f-4e3b-b2b6-0877a1a0fe6e (latest)"
     },
     "gias": {
-      "download_url": "https://ea-edubase-api-prod.azurewebsites.net/edubase/downloads/public/edubasealldata20260914.csv",
+      "download_url": "https://ea-edubase-api-prod.azurewebsites.net/edubase/downloads/public/edubasealldata20260915.csv",
       "name": "Get Information About Schools",
-      "source_date": "2026-09-14"
+      "source_date": "2026-09-15"
     },
     "gias_links": {
-      "download_url": "https://ea-edubase-api-prod.azurewebsites.net/edubase/downloads/public/links_edubasealldata20260914.csv",
+      "download_url": "https://ea-edubase-api-prod.azurewebsites.net/edubase/downloads/public/links_edubasealldata20260915.csv",
       "name": "Get Information About Schools establishment links",
-      "source_date": "2026-09-14"
+      "source_date": "2026-09-15"
     },
     "ks4_benchmarks": {
       "download_url": "https://api.education.gov.uk/statistics/v1/data-sets/19e39901-560d-f972-b6f3-dd085539c095/csv",

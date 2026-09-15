@@ -285,6 +285,32 @@ def destination_rows(
     )
 
 
+
+def admissions_rows(school: SchoolResult) -> list[dict[str, str]]:
+    """Return the latest published school-level applications/offers summary."""
+    admissions = school.admissions
+    values: tuple[tuple[str, str], ...] = (
+        ("Entry year", admissions.data_year or MISSING),
+        ("Admissions demand", admissions.demand_band or MISSING),
+        ("First preferences", format_integer(admissions.first_preferences)),
+        ("Second preferences", format_integer(admissions.second_preferences)),
+        ("Third preferences", format_integer(admissions.third_preferences)),
+        ("Total preferences", format_integer(admissions.total_preferences)),
+        ("First-preference offers", format_integer(admissions.first_preference_offers)),
+        ("Second-preference offers", format_integer(admissions.second_preference_offers)),
+        ("Third-preference offers", format_integer(admissions.third_preference_offers)),
+        ("Total offers", format_integer(admissions.total_offers)),
+        ("First preferences per offer", format_number(admissions.first_preferences_per_offer, decimals=2)),
+        ("National demand percentile", format_percent(admissions.demand_percentile, decimals=0)),
+        ("Preferences from outside the LA", format_integer(admissions.outside_la_preferences)),
+        ("Offers to applicants from outside the LA", format_integer(admissions.outside_la_offers)),
+    )
+    return [
+        {"Measure": label, "School": value}
+        for label, value in values
+        if value != MISSING
+    ]
+
 def pastoral_rows(school: SchoolResult) -> list[dict[str, str]]:
     pastoral = school.pastoral
     values: tuple[tuple[str, str], ...] = (
@@ -407,6 +433,20 @@ TREND_METRIC_LABELS: dict[str, dict[str, str]] = {
         "pupil_teacher_ratio": "Pupils per teacher",
         "pupil_adult_ratio": "Pupils per adult",
     },
+    "admissions": {
+        "first_preferences": "First preferences",
+        "second_preferences": "Second preferences",
+        "third_preferences": "Third preferences",
+        "total_preferences": "Total preferences",
+        "first_preference_offers": "First-preference offers",
+        "second_preference_offers": "Second-preference offers",
+        "third_preference_offers": "Third-preference offers",
+        "total_offers": "Total offers",
+        "outside_la_preferences": "Preferences from outside the LA",
+        "outside_la_offers": "Offers to applicants from outside the LA",
+        "first_preferences_per_offer": "First preferences per offer",
+        "admissions_demand_percentile": "National demand percentile",
+    },
     "destinations": {
         "destination_pupil_count": "Destination cohort",
         "sustained_destination_pct": "Sustained destination",
@@ -423,6 +463,7 @@ DEFAULT_TREND_METRIC = {
     "attendance": "overall_absence_pct",
     "behaviour": "suspension_rate",
     "workforce": "pupil_teacher_ratio",
+    "admissions": "first_preferences_per_offer",
     "destinations": "sustained_destination_pct",
 }
 

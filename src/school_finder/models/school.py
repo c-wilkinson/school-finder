@@ -246,6 +246,26 @@ class AdmissionsInformation:
     last_offer_distance_miles: float | None = None
     last_offer_year: str | None = None
     likelihood: str | None = None
+    data_year: str | None = None
+    first_preferences: int | None = None
+    second_preferences: int | None = None
+    third_preferences: int | None = None
+    total_preferences: int | None = None
+    first_preference_offers: int | None = None
+    second_preference_offers: int | None = None
+    third_preference_offers: int | None = None
+    total_offers: int | None = None
+    outside_la_preferences: int | None = None
+    outside_la_offers: int | None = None
+    first_preferences_per_offer: float | None = None
+    demand_percentile: float | None = None
+    demand_band: str | None = None
+    source: str | None = None
+    source_url: str | None = None
+    source_urn: str | None = None
+    source_school_name: str | None = None
+    source_kind: str | None = None
+    source_link_depth: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -542,6 +562,26 @@ def school_result_from_flat_record(record: Mapping[str, Any]) -> SchoolResult:
             last_offer_distance_miles=_as_float(record.get("last_offer_distance_miles")),
             last_offer_year=_as_str(record.get("last_offer_year")),
             likelihood=_as_str(record.get("admissions_likelihood")),
+            data_year=_as_str(record.get("admission_year")),
+            first_preferences=_as_int(record.get("first_preferences")),
+            second_preferences=_as_int(record.get("second_preferences")),
+            third_preferences=_as_int(record.get("third_preferences")),
+            total_preferences=_as_int(record.get("total_preferences")),
+            first_preference_offers=_as_int(record.get("first_preference_offers")),
+            second_preference_offers=_as_int(record.get("second_preference_offers")),
+            third_preference_offers=_as_int(record.get("third_preference_offers")),
+            total_offers=_as_int(record.get("total_offers")),
+            outside_la_preferences=_as_int(record.get("outside_la_preferences")),
+            outside_la_offers=_as_int(record.get("outside_la_offers")),
+            first_preferences_per_offer=_as_float(record.get("first_preferences_per_offer")),
+            demand_percentile=_as_float(record.get("admissions_demand_percentile")),
+            demand_band=_as_str(record.get("admissions_demand_band")),
+            source=_as_str(record.get("admissions_source")),
+            source_url=_as_str(record.get("admissions_source_url")),
+            source_urn=_as_str(record.get("admissions_source_urn")),
+            source_school_name=_as_str(record.get("admissions_source_school_name")),
+            source_kind=_as_str(record.get("admissions_source_kind")),
+            source_link_depth=_as_int(record.get("admissions_source_link_depth")),
         ),
         travel=TravelInformation(
             distance_miles=_as_float(record.get("distance_miles")),

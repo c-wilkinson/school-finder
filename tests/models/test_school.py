@@ -83,6 +83,16 @@ def test_maps_all_current_and_future_canonical_fields_into_nested_contract():
         "admissions_policy":"Non-selective",
         "selective":"no", "published_admission_number":"240", "catchment_description":"Area",
         "last_offer_distance_miles":"2.4", "last_offer_year":"2026", "admissions_likelihood":"Likely",
+        "admission_year":"2026", "first_preferences":"250", "second_preferences":"100",
+        "third_preferences":"75", "total_preferences":"500",
+        "first_preference_offers":"180", "second_preference_offers":"30",
+        "third_preference_offers":"10", "total_offers":"200",
+        "outside_la_preferences":"20", "outside_la_offers":"8",
+        "first_preferences_per_offer":"1.25", "admissions_demand_percentile":"88",
+        "admissions_demand_band":"High", "admissions_source":"DfE admissions",
+        "admissions_source_url":"https://example.test/admissions",
+        "admissions_source_urn":"111", "admissions_source_school_name":"Old school",
+        "admissions_source_kind":"predecessor", "admissions_source_link_depth":"1",
         "distance_miles":"1.25", "walking_minutes":"42", "public_transport_minutes":"27",
         "annual_transport_cost_gbp":"500", "school_day_summary":"08:30-15:30",
         "leave_home_time":"07:45", "home_arrival_time":"16:05", "total_day_minutes":"500",
@@ -121,6 +131,13 @@ def test_maps_all_current_and_future_canonical_fields_into_nested_contract():
     assert result.destinations.destination_year == "202324"
     assert result.destinations.source_kind == "predecessor"
     assert result.admissions.selective is False
+    assert result.admissions.data_year == "2026"
+    assert result.admissions.first_preferences == 250
+    assert result.admissions.total_offers == 200
+    assert result.admissions.first_preferences_per_offer == 1.25
+    assert result.admissions.demand_percentile == 88.0
+    assert result.admissions.demand_band == "High"
+    assert result.admissions.source_kind == "predecessor"
     assert result.travel.public_transport_time_saved_minutes == 15
     assert result.travel.school_day.summary == "08:30-15:30"
     assert result.user_assessment.score == 4.0

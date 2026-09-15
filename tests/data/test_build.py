@@ -34,6 +34,7 @@ def _sources(monkeypatch):
     workforce_benchmarks = CsvSource("Workforce benchmarks", "workforce-bench-url", "workforce-bench-release")
     workforce_ratio_benchmarks = CsvSource("Workforce ratio benchmarks", "workforce-ratio-bench-url", "workforce-ratio-bench-release")
     parent_view = CsvSource("Parent View", "parent-view-url", "parent-view-release")
+    admissions = CsvSource("Admissions", "admissions-url", "admissions-release")
     monkeypatch.setattr(build, "create_session", lambda: object())
     monkeypatch.setattr(build, "discover_latest_gias_source", lambda session: gias)
     monkeypatch.setattr(build, "discover_latest_gias_links_source", lambda session, today=None: gias_links)
@@ -51,6 +52,7 @@ def _sources(monkeypatch):
     monkeypatch.setattr(build, "discover_workforce_school_source", lambda session: workforce)
     monkeypatch.setattr(build, "discover_workforce_ratio_school_source", lambda session: workforce_ratios)
     monkeypatch.setattr(build, "discover_parent_view_source", lambda session: parent_view)
+    monkeypatch.setattr(build, "discover_admissions_source", lambda session: admissions)
     monkeypatch.setattr(build, "discover_ks4_benchmark_source", lambda session: ks4_benchmarks)
     monkeypatch.setattr(build, "discover_attendance_benchmark_source", lambda session: attendance_benchmarks)
     monkeypatch.setattr(build, "discover_behaviour_benchmark_source", lambda session: behaviour_benchmarks)
@@ -85,6 +87,7 @@ def _mock_context_readers(monkeypatch):
     monkeypatch.setattr(build, "read_behaviour_school", lambda path: pd.DataFrame(columns=["urn", *build.BEHAVIOUR_COLUMNS]))
     monkeypatch.setattr(build, "read_workforce_school", lambda *paths: pd.DataFrame(columns=["urn", *build.WORKFORCE_COLUMNS]))
     monkeypatch.setattr(build, "read_parent_view_school", lambda path: pd.DataFrame(columns=["urn", *build.PASTORAL_COLUMNS]))
+    monkeypatch.setattr(build, "read_admissions_school", lambda path: pd.DataFrame(columns=["urn", *build.ADMISSIONS_COLUMNS]))
     monkeypatch.setattr(
         build,
         "read_attendance_benchmarks",
@@ -822,6 +825,49 @@ def test_enrich_school_context_maps_all_three_domains_with_lineage():
     assert result["workforce_source_kind"] == "current"
 
 
+def test_enrich_school_context_maps_admissions_with_lineage():
+    schools = pd.DataFrame([{"urn": "2", "school_name": "Current"}])
+    links = pd.DataFrame([
+        {"successor_urn": "2", "predecessor_urn": "1", "predecessor_name": "Old"}
+    ])
+    empty_attendance = pd.DataFrame(columns=["urn", *build.ATTENDANCE_COLUMNS])
+    empty_behaviour = pd.DataFrame(columns=["urn", *build.BEHAVIOUR_COLUMNS])
+    empty_workforce = pd.DataFrame(columns=["urn", *build.WORKFORCE_COLUMNS])
+    admissions = pd.DataFrame([{
+        "urn": "1",
+        "first_preferences": 250,
+        "total_offers": 200,
+        "first_preferences_per_offer": 1.25,
+        "admissions_demand_band": "High",
+        **{
+            column: pd.NA
+            for column in build.ADMISSIONS_COLUMNS
+            if column not in {
+                "first_preferences",
+                "total_offers",
+                "first_preferences_per_offer",
+                "admissions_demand_band",
+            }
+        },
+    }])
+
+    result = build.enrich_school_context(
+        schools,
+        empty_attendance,
+        empty_behaviour,
+        empty_workforce,
+        admissions=admissions,
+        links=links,
+    ).iloc[0]
+
+    assert result["first_preferences"] == 250
+    assert result["total_offers"] == 200
+    assert result["admissions_demand_band"] == "High"
+    assert result["admissions_source_urn"] == "1"
+    assert result["admissions_source_school_name"] == "Old"
+    assert result["admissions_source_kind"] == "predecessor"
+
+
 def test_enrich_school_context_without_lineage_joins_raw_domain_rows():
     schools = pd.DataFrame([{"urn": "1"}])
     attendance = pd.DataFrame([{"urn": "1", "overall_absence_pct": 7.0}])
@@ -884,6 +930,13 @@ def test_build_school_history_combines_supported_domains(monkeypatch):
             [{"urn": "2", "destination_leaver_year": "202223", "sustained_destination_pct": 94.0}]
         ),
     )
+    monkeypatch.setattr(
+        build,
+        "read_admissions_history",
+        lambda path: pd.DataFrame(
+            [{"urn": "2", "admission_year": "2026", "first_preferences": 240.0, "total_offers": 200.0, "first_preferences_per_offer": 1.2}]
+        ),
+    )
 
     result = build.build_school_history(
         schools,
@@ -894,6 +947,7 @@ def test_build_school_history_combines_supported_domains(monkeypatch):
         workforce_path=Path("workforce"),
         workforce_ratio_path=Path("ratios"),
         destination_path=Path("destinations"),
+        admissions_path=Path("admissions"),
     )
 
     assert set(result["domain"]) == {
@@ -902,6 +956,7 @@ def test_build_school_history_combines_supported_domains(monkeypatch):
         "behaviour",
         "workforce",
         "destinations",
+        "admissions",
     }
     academic = result[result["domain"].eq("academics")].iloc[0]
     assert academic["urn"] == "2"

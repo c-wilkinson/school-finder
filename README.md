@@ -34,8 +34,10 @@ School Finder currently uses:
 - **ONSPD** — ONS Postcode Directory
 - **Ofsted** — school inspection outcomes and judgements
 - **DfE KS4** — Attainment 8, Progress 8, English & Maths, EBacc and related measures
+- **DfE applications and offers** — school-level preference/offer history and admissions-demand context
+- **DfE attendance, behaviour, workforce and destinations** — contextual school metrics and trends
 
-The build process downloads and normalises the source data into local Parquet datasets.
+The build process downloads and normalises the source data into local Parquet datasets. Historical school-level applications/offers are retained alongside the other trend domains, so the Streamlit detail view can show how demand has changed over time.
 
 ## Quick start
 
@@ -62,6 +64,8 @@ python -m streamlit run streamlit_app.py
 Personal school state is session-only by default. From **My schools**, users can explicitly opt in to **Remember my schools on this device**, which stores only shortlist / not-for-us state, ratings and notes in that browser's local storage. Schools with only a saved rating or note remain visible under **Other saved schools**.
 
 **Forget saved personalisation** removes the browser copy but keeps the current session intact. **Clear all personalisation** is a separate confirmed action that removes every shortlist decision, rating and note from both the current session and any saved browser copy. If browser storage is unavailable, School Finder falls back to session-only personalisation rather than failing the app.
+
+School detail also includes an **Admissions** view using DfE's school-level applications and offers data. It shows preference/offer counts, a year-relative admissions-demand band and historical trends. The demand signal is descriptive only: it is not presented as a probability that a particular child will receive an offer.
 
 ### Output formats
 

@@ -5,6 +5,7 @@ import pandas as pd
 
 from school_finder.models.school import (
     AcademicPerformance,
+    AdmissionsInformation,
     AttendanceStatistics,
     BehaviourStatistics,
     DestinationStatistics,
@@ -20,6 +21,7 @@ from school_finder.models.school import (
 from school_finder.models.search import PostcodeLocation, SchoolSearchRequest, SchoolSearchResult
 from school_finder.ui.detail import (
     academic_rows,
+    admissions_rows,
     available_trend_metrics,
     attendance_rows,
     behaviour_rows,
@@ -418,3 +420,44 @@ def test_trend_frame_returns_empty_when_domain_has_no_valid_school_years():
     )
 
     assert trend_frame(history, "academics", "attainment8").empty
+
+
+def test_admissions_rows_and_trend_metrics():
+    school = _school()
+    school = SchoolResult(
+        identity=school.identity,
+        location=school.location,
+        academics=school.academics,
+        admissions=AdmissionsInformation(
+            data_year="2026",
+            first_preferences=250,
+            second_preferences=100,
+            third_preferences=75,
+            total_preferences=500,
+            first_preference_offers=180,
+            second_preference_offers=30,
+            third_preference_offers=10,
+            total_offers=200,
+            outside_la_preferences=20,
+            outside_la_offers=8,
+            first_preferences_per_offer=1.25,
+            demand_percentile=88.0,
+            demand_band="High",
+        ),
+    )
+    rows = admissions_rows(school)
+    values = {row["Measure"]: row["School"] for row in rows}
+    assert values["Admissions demand"] == "High"
+    assert values["First preferences"] == "250"
+    assert values["First preferences per offer"] == "1.25"
+    assert values["National demand percentile"] == "88%"
+
+    history = pd.DataFrame(
+        [
+            {"domain": "admissions", "series": "School", "metric": "first_preferences_per_offer", "year": "2025", "value": 1.1, "source_kind": "current", "source_school_name": "Example School"},
+            {"domain": "admissions", "series": "School", "metric": "first_preferences_per_offer", "year": "2026", "value": 1.25, "source_kind": "current", "source_school_name": "Example School"},
+        ]
+    )
+    assert "first_preferences_per_offer" in available_trend_metrics(history, "admissions")
+    chart = trend_frame(history, "admissions", "first_preferences_per_offer")
+    assert chart["School"].tolist() == [1.1, 1.25]

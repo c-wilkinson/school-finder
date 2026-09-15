@@ -42,6 +42,7 @@ from school_finder.ui.detail import (
     TREND_METRIC_LABELS,
     available_trend_metrics,
     academic_rows,
+    admissions_rows,
     attendance_rows,
     behaviour_rows,
     destination_rows,
@@ -585,6 +586,13 @@ def _render_school_card(
             st.caption(
                 f"Match score uses {school.preference_score.coverage_pct:.0f}% of the requested preference data."
             )
+        if school.admissions.demand_band:
+            demand = f"Admissions demand: {school.admissions.demand_band}"
+            if school.admissions.first_preferences_per_offer is not None:
+                demand += f" • {school.admissions.first_preferences_per_offer:.2f} first preferences per offer"
+            if school.admissions.data_year:
+                demand += f" ({school.admissions.data_year} entry)"
+            st.caption(demand)
 
         _render_personal_disposition(
             school.identity.urn,
@@ -788,6 +796,43 @@ def _render_overview(school: SchoolResult) -> None:
     if website:
         st.markdown(f"[School website]({website})")
     _render_detail_table(overview_rows(school), "No school information is currently available.")
+
+
+def _render_admissions(
+    school: SchoolResult,
+    history: pd.DataFrame | None = None,
+    history_error: str | None = None,
+) -> None:
+    admissions = school.admissions
+    if admissions.data_year:
+        st.caption(f"Admissions data: {admissions.data_year} entry")
+    _render_detail_table(
+        admissions_rows(school),
+        "No school-level applications and offers data is currently available for this school.",
+    )
+    if admissions.demand_band:
+        st.info(
+            "Admissions demand is based on first preferences per total offer and shows "
+            "historical demand relative to other secondary schools in the same entry year. "
+            "It is not a probability of admission."
+        )
+    else:
+        st.caption(
+            "Applications and offers describe historical demand, not a child's chance of admission. "
+            "Published admissions criteria and the applicant cohort still determine offers."
+        )
+    if admissions.source_school_name and admissions.source_school_name != school.identity.name:
+        st.caption(
+            f"Admissions history source: {admissions.source_school_name}"
+            + (f" (URN {admissions.source_urn})" if admissions.source_urn else "")
+            + "."
+        )
+    _render_trends(
+        history,
+        "admissions",
+        heading="Admissions demand trends",
+        error=history_error,
+    )
 
 
 def _render_academics(
@@ -1037,6 +1082,7 @@ def _detail_page(search_page=None, compare_page=None) -> None:
     tabs = st.tabs(
         [
             "Overview",
+            "Admissions",
             "Academics",
             "Subjects",
             "Ofsted",
@@ -1050,20 +1096,22 @@ def _detail_page(search_page=None, compare_page=None) -> None:
     with tabs[0]:
         _render_overview(school)
     with tabs[1]:
-        _render_academics(school, benchmarks, history, history_error)
+        _render_admissions(school, history, history_error)
     with tabs[2]:
-        _render_subjects(school)
+        _render_academics(school, benchmarks, history, history_error)
     with tabs[3]:
-        _render_ofsted(school)
+        _render_subjects(school)
     with tabs[4]:
-        _render_pastoral_behaviour(school, benchmarks, history, history_error)
+        _render_ofsted(school)
     with tabs[5]:
-        _render_staffing(school, benchmarks, history, history_error)
+        _render_pastoral_behaviour(school, benchmarks, history, history_error)
     with tabs[6]:
-        _render_destinations(school, benchmarks, history, history_error)
+        _render_staffing(school, benchmarks, history, history_error)
     with tabs[7]:
-        _render_match_explanation(school, result)
+        _render_destinations(school, benchmarks, history, history_error)
     with tabs[8]:
+        _render_match_explanation(school, result)
+    with tabs[9]:
         _render_personal_view(school.identity.urn)
 
 def _render_my_school_card(school: SchoolResult, *, detail_page=None) -> None:

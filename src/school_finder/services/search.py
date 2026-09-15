@@ -214,6 +214,29 @@ PASTORAL_COLUMNS = [
     "pastoral_source_url",
 ]
 
+ADMISSIONS_COLUMNS = [
+    "admission_year",
+    "first_preferences",
+    "second_preferences",
+    "third_preferences",
+    "total_preferences",
+    "first_preference_offers",
+    "second_preference_offers",
+    "third_preference_offers",
+    "total_offers",
+    "outside_la_preferences",
+    "outside_la_offers",
+    "first_preferences_per_offer",
+    "admissions_demand_percentile",
+    "admissions_demand_band",
+    "admissions_source",
+    "admissions_source_url",
+    "admissions_source_urn",
+    "admissions_source_school_name",
+    "admissions_source_kind",
+    "admissions_source_link_depth",
+]
+
 DESTINATION_COLUMNS = [
     "destination_leaver_year",
     "destination_year",
@@ -511,6 +534,7 @@ def find_schools(
             + BEHAVIOUR_COLUMNS
             + WORKFORCE_COLUMNS
             + DESTINATION_COLUMNS
+            + ADMISSIONS_COLUMNS
             + PASTORAL_COLUMNS
             + SCORE_OUTPUT_COLUMNS
         )

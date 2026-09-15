@@ -38,6 +38,12 @@ from school_finder.data.history import (
     resolve_school_history_lineage,
 )
 from school_finder.data.sources.common import create_session, download_csv
+from school_finder.data.sources.admissions import (
+    ADMISSIONS_METRICS,
+    discover_admissions_source,
+    read_admissions_history,
+    read_admissions_school,
+)
 from school_finder.data.sources.attendance import (
     ATTENDANCE_METRICS,
     discover_attendance_benchmark_source,
@@ -289,6 +295,26 @@ DESTINATION_COLUMNS = (
 )
 
 
+ADMISSIONS_COLUMNS = (
+    "admission_year",
+    "first_preferences",
+    "second_preferences",
+    "third_preferences",
+    "total_preferences",
+    "first_preference_offers",
+    "second_preference_offers",
+    "third_preference_offers",
+    "total_offers",
+    "outside_la_preferences",
+    "outside_la_offers",
+    "first_preferences_per_offer",
+    "admissions_demand_percentile",
+    "admissions_demand_band",
+    "admissions_source",
+    "admissions_source_url",
+)
+
+
 def build_school_history(
     schools: pd.DataFrame,
     links: pd.DataFrame,
@@ -299,6 +325,7 @@ def build_school_history(
     workforce_path: Path,
     workforce_ratio_path: Path,
     destination_path: Path,
+    admissions_path: Path,
 ) -> pd.DataFrame:
     """Build lineage-aware historical metrics for current schools."""
     frames = [
@@ -331,6 +358,12 @@ def build_school_history(
             domain="destinations",
             year_column="destination_leaver_year",
             metric_columns=DESTINATION_METRICS,
+        ),
+        normalise_school_history(
+            read_admissions_history(admissions_path),
+            domain="admissions",
+            year_column="admission_year",
+            metric_columns=(*ADMISSIONS_METRICS, "first_preferences_per_offer", "admissions_demand_percentile"),
         ),
     ]
     raw = pd.concat(frames, ignore_index=True)
@@ -751,6 +784,7 @@ def enrich_school_context(
     behaviour: pd.DataFrame,
     workforce: pd.DataFrame,
     destinations: pd.DataFrame | None = None,
+    admissions: pd.DataFrame | None = None,
     *,
     links: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
@@ -781,6 +815,15 @@ def enrich_school_context(
                 DESTINATION_COLUMNS,
                 ("destination_pupil_count", "sustained_destination_pct"),
                 "destination",
+            )
+        )
+    if admissions is not None:
+        domains.append(
+            (
+                admissions,
+                ADMISSIONS_COLUMNS,
+                ("first_preferences", "total_offers"),
+                "admissions",
             )
         )
     enriched = schools
@@ -847,6 +890,7 @@ def build_datasets(
     workforce_source = discover_workforce_school_source(session)
     workforce_ratio_source = discover_workforce_ratio_school_source(session)
     parent_view_source = discover_parent_view_source(session)
+    admissions_source = discover_admissions_source(session)
 
     ks4_benchmark_source = discover_ks4_benchmark_source(session)
     destination_national_source = discover_destination_national_source(session)
@@ -870,6 +914,7 @@ def build_datasets(
     workforce_source_manifest = csv_source_manifest(workforce_source)
     workforce_ratio_source_manifest = csv_source_manifest(workforce_ratio_source)
     parent_view_source_manifest = csv_source_manifest(parent_view_source)
+    admissions_source_manifest = csv_source_manifest(admissions_source)
     ks4_benchmark_source_manifest = csv_source_manifest(ks4_benchmark_source)
     destination_national_source_manifest = csv_source_manifest(destination_national_source)
     destination_la_source_manifest = csv_source_manifest(destination_la_source)
@@ -898,6 +943,7 @@ def build_datasets(
         and source_matches(existing_manifest, "workforce_school", workforce_source_manifest, ("release_label", "download_url"))
         and source_matches(existing_manifest, "workforce_ratio_school", workforce_ratio_source_manifest, ("release_label", "download_url"))
         and source_matches(existing_manifest, "parent_view_school", parent_view_source_manifest, ("release_label", "download_url"))
+        and source_matches(existing_manifest, "admissions_school", admissions_source_manifest, ("release_label", "download_url"))
     )
     subjects_current = (
         not force
@@ -986,6 +1032,7 @@ def build_datasets(
             workforce_ratio_csv = temp_dir / "workforce_ratios.csv"
             destination_csv = temp_dir / "destinations.csv"
             parent_view_ods = temp_dir / "parent_view.ods"
+            admissions_csv = temp_dir / "admissions.csv"
             download_csv(session, ofsted_source, ofsted_csv)
             download_csv(session, legacy_ofsted_source, legacy_ofsted_csv)
             download_csv(session, independent_ofsted_source, independent_ofsted_csv)
@@ -996,6 +1043,7 @@ def build_datasets(
             download_csv(session, workforce_ratio_source, workforce_ratio_csv)
             download_csv(session, destination_source, destination_csv)
             download_csv(session, parent_view_source, parent_view_ods, minimum_size=100_000)
+            download_csv(session, admissions_source, admissions_csv, minimum_size=100_000)
             log("Enriching schools with Ofsted and DfE performance data...")
             ofsted = combine_ofsted_quality(
                 read_ofsted_quality(legacy_ofsted_csv),
@@ -1008,13 +1056,14 @@ def build_datasets(
                 read_ks4_quality(ks4_csv),
                 links=gias_links,
             )
-            log("Enriching schools with attendance, behaviour, workforce and destination data...")
+            log("Enriching schools with attendance, behaviour, workforce, destination and admissions data...")
             schools = enrich_school_context(
                 schools,
                 read_attendance_school(attendance_csv),
                 read_behaviour_school(behaviour_csv),
                 read_workforce_school(workforce_csv, workforce_ratio_csv),
                 read_destination_school(destination_csv),
+                read_admissions_school(admissions_csv),
                 links=gias_links,
             )
             log("Enriching schools with Ofsted Parent View pastoral-care data...")
@@ -1034,6 +1083,7 @@ def build_datasets(
                 workforce_path=workforce_csv,
                 workforce_ratio_path=workforce_ratio_csv,
                 destination_path=destination_csv,
+                admissions_path=admissions_csv,
             )
             if history.empty:
                 raise SchoolFinderError(
@@ -1175,6 +1225,7 @@ def build_datasets(
             "workforce_school": workforce_source_manifest,
             "workforce_ratio_school": workforce_ratio_source_manifest,
             "parent_view_school": parent_view_source_manifest,
+            "admissions_school": admissions_source_manifest,
             "ks4_benchmarks": ks4_benchmark_source_manifest,
             "destinations_national": destination_national_source_manifest,
             "destinations_local_authority": destination_la_source_manifest,
