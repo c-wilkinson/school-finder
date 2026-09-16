@@ -1,6 +1,6 @@
 {
   "coverage": "England",
-  "dataset_version": "gias-2026-09-15__onspd-2026-08",
+  "dataset_version": "gias-2026-09-16__onspd-2026-08",
   "files": {
     "benchmark_history.parquet": {
       "bytes": 429121,
@@ -100,7 +100,7 @@
       "sha256": "f0a8291be2ce313a08e57263bd223aec83d4dc362afbcab57ca446a0db2170bb"
     },
     "history.parquet": {
-      "bytes": 24822860,
+      "bytes": 25169662,
       "columns": [
         "urn",
         "domain",
@@ -112,8 +112,8 @@
         "source_kind",
         "source_link_depth"
       ],
-      "rows": 8166179,
-      "sha256": "afc1678f9274cee2a87f8ca1ba6bd0f74358c4b65e121280a6283697519abcfd"
+      "rows": 8206061,
+      "sha256": "ba4e6225b8473736e5df815d376a32bd9d3e245cdb27d51d4e423be8f952f84d"
     },
     "postcodes.parquet": {
       "bytes": 63252765,
@@ -134,9 +134,10 @@
       "sha256": "a2fdc3559da5b49464b6f84c02158d241dd9592561931e62adc81cd012539aee"
     },
     "schools.parquet": {
-      "bytes": 5328824,
+      "bytes": 5689835,
       "columns": [
         "urn",
+        "laestab",
         "school_name",
         "sector",
         "establishment_type",
@@ -309,8 +310,8 @@
         "pastoral_source",
         "pastoral_source_url"
       ],
-      "rows": 26479,
-      "sha256": "2e88e3b73cc81325bc3e049fd67154f274ff61bbee62009e91a2912972c49720"
+      "rows": 26483,
+      "sha256": "ba63e78430c0d225c9890bab24841b386fe53a9d66a68b2ff1a81fcdc1bccab2"
     },
     "subjects.parquet": {
       "bytes": 1037294,
@@ -334,8 +335,8 @@
       "sha256": "e74d0435fa84e793675db7528586246d3b99c323d106e104108639d410a6cf15"
     }
   },
-  "generated_at": "2026-09-15T22:12:15.235507Z",
-  "schema_version": 10,
+  "generated_at": "2026-09-16T05:59:32.923304Z",
+  "schema_version": 12,
   "sources": {
     "admissions_school": {
       "download_url": "https://content.explore-education-statistics.service.gov.uk/api/releases/0bf4f9cf-721d-44e3-8473-266c87e17e00/files/42d0d4e4-9604-413a-8275-00b829ffbdcb",
@@ -378,14 +379,14 @@
       "release_label": "EES dataset 7be58881-d49f-4e3b-b2b6-0877a1a0fe6e (latest)"
     },
     "gias": {
-      "download_url": "https://ea-edubase-api-prod.azurewebsites.net/edubase/downloads/public/edubasealldata20260915.csv",
+      "download_url": "https://ea-edubase-api-prod.azurewebsites.net/edubase/downloads/public/edubasealldata20260916.csv",
       "name": "Get Information About Schools",
-      "source_date": "2026-09-15"
+      "source_date": "2026-09-16"
     },
     "gias_links": {
-      "download_url": "https://ea-edubase-api-prod.azurewebsites.net/edubase/downloads/public/links_edubasealldata20260915.csv",
+      "download_url": "https://ea-edubase-api-prod.azurewebsites.net/edubase/downloads/public/links_edubasealldata20260916.csv",
       "name": "Get Information About Schools establishment links",
-      "source_date": "2026-09-15"
+      "source_date": "2026-09-16"
     },
     "ks4_benchmarks": {
       "download_url": "https://api.education.gov.uk/statistics/v1/data-sets/19e39901-560d-f972-b6f3-dd085539c095/csv",

@@ -32,6 +32,8 @@ def _raw_row(**overrides):
     row = {column: "" for column in gias.GIAS_COLUMNS}
     row.update({
         "URN": "100001",
+        "LA (code)": "850",
+        "EstablishmentNumber": "4001",
         "EstablishmentName": " Example School ",
         "TypeOfEstablishment (name)": "Academy converter",
         "EstablishmentTypeGroup (name)": "Academies",
@@ -126,6 +128,7 @@ def test_clean_gias_data_filters_invalid_rows_classifies_sector_and_deduplicates
     assert result.iloc[1]["sector"] == "Independent"
     assert result.iloc[0]["postcode"] == "RG22 6AA"
     assert result.iloc[0]["postcode_key"] == "RG226AA"
+    assert result.iloc[0]["laestab"] == "8504001"
     assert str(result["easting"].dtype) == "int32"
 
 

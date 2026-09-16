@@ -43,6 +43,7 @@ from school_finder.data.sources.admissions import (
     discover_admissions_source,
     read_admissions_history,
     read_admissions_school,
+    resolve_admissions_to_gias,
 )
 from school_finder.data.sources.attendance import (
     ATTENDANCE_METRICS,
@@ -360,7 +361,7 @@ def build_school_history(
             metric_columns=DESTINATION_METRICS,
         ),
         normalise_school_history(
-            read_admissions_history(admissions_path),
+            resolve_admissions_to_gias(read_admissions_history(admissions_path), schools),
             domain="admissions",
             year_column="admission_year",
             metric_columns=(*ADMISSIONS_METRICS, "first_preferences_per_offer", "admissions_demand_percentile"),
@@ -1063,7 +1064,7 @@ def build_datasets(
                 read_behaviour_school(behaviour_csv),
                 read_workforce_school(workforce_csv, workforce_ratio_csv),
                 read_destination_school(destination_csv),
-                read_admissions_school(admissions_csv),
+                resolve_admissions_to_gias(read_admissions_school(admissions_csv), schools),
                 links=gias_links,
             )
             log("Enriching schools with Ofsted Parent View pastoral-care data...")

@@ -27,6 +27,8 @@ GIAS_LOOKBACK_DAYS = 21
 
 GIAS_REQUIRED_COLUMNS = [
     "URN",
+    "LA (code)",
+    "EstablishmentNumber",
     "EstablishmentName",
     "TypeOfEstablishment (name)",
     "EstablishmentTypeGroup (name)",
@@ -53,6 +55,8 @@ GIAS_COLUMNS = GIAS_REQUIRED_COLUMNS + GIAS_OPTIONAL_COLUMNS
 
 GIAS_RENAME = {
     "URN": "urn",
+    "LA (code)": "la_code",
+    "EstablishmentNumber": "establishment_number",
     "EstablishmentName": "school_name",
     "TypeOfEstablishment (name)": "establishment_type",
     "EstablishmentTypeGroup (name)": "establishment_type_group",
@@ -388,6 +392,14 @@ def clean_gias_data(raw: pd.DataFrame, source: GiasSource) -> pd.DataFrame:
     ] = "Independent"
 
     schools["faith_status"] = _faith_status(schools["religious_character"])
+    la_code = schools["la_code"].str.replace(r"\.0$", "", regex=True).str.replace(r"[^0-9]", "", regex=True)
+    establishment_number = schools["establishment_number"].str.replace(r"\.0$", "", regex=True).str.replace(r"[^0-9]", "", regex=True)
+    has_laestab = la_code.ne("") & establishment_number.ne("")
+    schools["laestab"] = pd.Series("", index=schools.index, dtype="string")
+    schools.loc[has_laestab, "laestab"] = (
+        la_code.loc[has_laestab].str.zfill(3)
+        + establishment_number.loc[has_laestab].str.zfill(4)
+    )
     schools["postcode"] = schools["postcode"].map(format_postcode)
     schools["postcode_key"] = schools["postcode"].map(normalise_postcode)
     schools["source_date"] = pd.Timestamp(source.source_date)
@@ -399,6 +411,7 @@ def clean_gias_data(raw: pd.DataFrame, source: GiasSource) -> pd.DataFrame:
 
     columns = [
         "urn",
+        "laestab",
         "school_name",
         "sector",
         "establishment_type",
