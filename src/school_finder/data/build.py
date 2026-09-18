@@ -298,6 +298,7 @@ DESTINATION_COLUMNS = (
 
 ADMISSIONS_COLUMNS = (
     "admission_year",
+    "entry_year",
     "first_preferences",
     "second_preferences",
     "third_preferences",

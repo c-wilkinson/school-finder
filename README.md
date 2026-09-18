@@ -65,7 +65,9 @@ Personal school state is session-only by default. From **My schools**, users can
 
 **Forget saved personalisation** removes the browser copy but keeps the current session intact. **Clear all personalisation** is a separate confirmed action that removes every shortlist decision, rating and note from both the current session and any saved browser copy. If browser storage is unavailable, School Finder falls back to session-only personalisation rather than failing the app.
 
-School detail also includes an **Admissions** view using DfE's school-level applications and offers data. It shows preference/offer counts, a year-relative admissions-demand band and historical trends. The demand signal is descriptive only: it is not presented as a probability that a particular child will receive an offer.
+School detail also includes an **Admissions** view using DfE's school-level applications and offers data. It keeps the academic admissions year (for example 2026/27) separate from the entry point (for example Year 7), and shows preference/offer counts, a comparable demand band and historical trends. The demand signal is descriptive only: it is not presented as a probability that a particular child will receive an offer.
+
+Admission-arrangement context is shown separately from historical demand. School Finder derives the admission-authority category and selective/non-selective status from national GIAS data. For Hampshire schools, the detail view also loads the current published admission number (PAN), entry year and official admission-policy link from Hampshire County Council's Find a School service. Other admission authorities currently retain the national context while provider-specific PAN/policy coverage is added incrementally.
 
 ### Output formats
 

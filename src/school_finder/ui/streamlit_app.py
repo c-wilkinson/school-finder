@@ -26,6 +26,10 @@ from school_finder.models.preferences import PreferenceMetric, PreferencePreset
 from school_finder.models.personalisation import SchoolDisposition
 from school_finder.models.school import SchoolResult
 from school_finder.models.search import SchoolSearchResult
+from school_finder.services.admission_arrangements import (
+    base_admission_arrangements,
+    get_admission_arrangements,
+)
 from school_finder.services.history import get_school_history
 from school_finder.services.search import get_schools_by_urn, search_schools
 from school_finder.services.subjects import get_school_subject_results
@@ -42,6 +46,7 @@ from school_finder.ui.detail import (
     TREND_METRIC_LABELS,
     available_trend_metrics,
     academic_rows,
+    admission_arrangement_rows,
     admissions_rows,
     attendance_rows,
     behaviour_rows,
@@ -400,6 +405,10 @@ def _cached_schools_by_urn_impl(data_dir: str, urns: tuple[str, ...]):
     return get_schools_by_urn(Path(data_dir), urns)
 
 
+def _cached_admission_arrangements_impl(school: SchoolResult):
+    return get_admission_arrangements(school)
+
+
 if st is not None:
     _cached_search = st.cache_data(ttl=900, show_spinner=False)(_cached_search_impl)
     _cached_subjects = st.cache_data(ttl=900, show_spinner=False)(_cached_subjects_impl)
@@ -407,11 +416,15 @@ if st is not None:
     _cached_schools_by_urn = st.cache_data(ttl=60, show_spinner=False)(
         _cached_schools_by_urn_impl
     )
+    _cached_admission_arrangements = st.cache_data(ttl=21600, show_spinner=False)(
+        _cached_admission_arrangements_impl
+    )
 else:
     _cached_search = _cached_search_impl
     _cached_subjects = _cached_subjects_impl
     _cached_history = _cached_history_impl
     _cached_schools_by_urn = _cached_schools_by_urn_impl
+    _cached_admission_arrangements = _cached_admission_arrangements_impl
 
 
 def _optional_number(label: str, **kwargs) -> float | None:
@@ -591,7 +604,9 @@ def _render_school_card(
             if school.admissions.first_preferences_per_offer is not None:
                 demand += f" • {school.admissions.first_preferences_per_offer:.2f} first preferences per offer"
             if school.admissions.data_year:
-                demand += f" ({school.admissions.data_year} entry)"
+                demand += f" ({school.admissions.data_year})"
+            if school.admissions.entry_year:
+                demand += f" • Year {school.admissions.entry_year} entry"
             st.caption(demand)
 
         _render_personal_disposition(
@@ -803,9 +818,38 @@ def _render_admissions(
     history: pd.DataFrame | None = None,
     history_error: str | None = None,
 ) -> None:
+    st.subheader("Admission arrangements")
+    arrangements = base_admission_arrangements(school)
+    arrangements_error = None
+    try:
+        arrangements = _cached_admission_arrangements(school)
+    except (SchoolFinderError, OSError, ValueError) as exc:
+        arrangements_error = str(exc)
+
+    _render_detail_table(
+        admission_arrangement_rows(arrangements),
+        "No admission-arrangement context is currently available for this school.",
+    )
+    if arrangements.source_url:
+        st.markdown(f"[Official admission arrangements]({arrangements.source_url})")
+        if arrangements.directory_url and arrangements.directory_url != arrangements.source_url:
+            st.markdown(f"[Official school admissions profile]({arrangements.directory_url})")
+    elif arrangements_error:
+        st.caption(
+            "Official PAN/admission-arrangement details could not be loaded right now. "
+            "The national school context above is still available."
+        )
+    else:
+        st.caption(
+            "Published admission number and official arrangement links are not yet "
+            "integrated for this admission authority."
+        )
+
+    st.subheader("Applications and offers")
     admissions = school.admissions
     if admissions.data_year:
-        st.caption(f"Admissions data: {admissions.data_year} entry")
+        entry = f" • Year {admissions.entry_year} entry" if admissions.entry_year else ""
+        st.caption(f"Admissions data: {admissions.data_year}{entry}")
     _render_detail_table(
         admissions_rows(school),
         "No school-level applications and offers data is currently available for this school.",
@@ -813,7 +857,7 @@ def _render_admissions(
     if admissions.demand_band:
         st.info(
             "Admissions demand is based on first preferences per total offer and shows "
-            "historical demand relative to other secondary schools in the same entry year. "
+            "historical demand relative to other secondary schools for the same admissions year and entry point. "
             "It is not a probability of admission."
         )
     else:

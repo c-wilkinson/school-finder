@@ -13,7 +13,7 @@ from school_finder.models.school import (
 
 def test_maps_all_current_and_future_canonical_fields_into_nested_contract():
     result = school_result_from_flat_record({
-        "urn":"123456", "school_name":"Example School", "sector":"State-funded",
+        "urn":"123456", "laestab":"8504182", "school_name":"Example School", "sector":"State-funded",
         "establishment_type":"Academy", "phase":"Secondary", "age_range":"11–16",
         "gender":"Mixed", "religious_character":"None", "website":"https://example.test",
         "telephone":"0123", "address":"1 Road", "town":"Town", "postcode":"RG1 1AA",
@@ -83,7 +83,7 @@ def test_maps_all_current_and_future_canonical_fields_into_nested_contract():
         "admissions_policy":"Non-selective",
         "selective":"no", "published_admission_number":"240", "catchment_description":"Area",
         "last_offer_distance_miles":"2.4", "last_offer_year":"2026", "admissions_likelihood":"Likely",
-        "admission_year":"2026", "first_preferences":"250", "second_preferences":"100",
+        "admission_year":"2026/27", "entry_year":"7", "first_preferences":"250", "second_preferences":"100",
         "third_preferences":"75", "total_preferences":"500",
         "first_preference_offers":"180", "second_preference_offers":"30",
         "third_preference_offers":"10", "total_offers":"200",
@@ -99,6 +99,9 @@ def test_maps_all_current_and_future_canonical_fields_into_nested_contract():
         "user_notes":"Visit", "user_score":"4.0",
     })
     assert result.identity.urn == "123456"
+    assert result.identity.establishment_number == "4182"
+    assert result.admissions.data_year == "2026/27"
+    assert result.admissions.entry_year == "7"
     assert result.location.easting == 1
     assert result.location.northing == 2
     assert result.location.local_authority_code == "E10000014"
@@ -131,7 +134,7 @@ def test_maps_all_current_and_future_canonical_fields_into_nested_contract():
     assert result.destinations.destination_year == "202324"
     assert result.destinations.source_kind == "predecessor"
     assert result.admissions.selective is False
-    assert result.admissions.data_year == "2026"
+    assert result.admissions.data_year == "2026/27"
     assert result.admissions.first_preferences == 250
     assert result.admissions.total_offers == 200
     assert result.admissions.first_preferences_per_offer == 1.25

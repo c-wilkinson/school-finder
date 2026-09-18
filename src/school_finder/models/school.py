@@ -24,6 +24,7 @@ class SchoolIdentity:
     faith_status: str | None = None
     website: str | None = None
     telephone: str | None = None
+    establishment_number: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -247,6 +248,7 @@ class AdmissionsInformation:
     last_offer_year: str | None = None
     likelihood: str | None = None
     data_year: str | None = None
+    entry_year: str | None = None
     first_preferences: int | None = None
     second_preferences: int | None = None
     third_preferences: int | None = None
@@ -392,6 +394,9 @@ def school_result_from_flat_record(record: Mapping[str, Any]) -> SchoolResult:
             faith_status=_as_str(record.get("faith_status")),
             website=_as_str(record.get("website")),
             telephone=_as_str(record.get("telephone")),
+            establishment_number=(
+                (_as_str(record.get("laestab")) or "")[-4:] or None
+            ),
         ),
         location=SchoolLocation(
             address=_as_str(record.get("address")),
@@ -563,6 +568,7 @@ def school_result_from_flat_record(record: Mapping[str, Any]) -> SchoolResult:
             last_offer_year=_as_str(record.get("last_offer_year")),
             likelihood=_as_str(record.get("admissions_likelihood")),
             data_year=_as_str(record.get("admission_year")),
+            entry_year=_as_str(record.get("entry_year")),
             first_preferences=_as_int(record.get("first_preferences")),
             second_preferences=_as_int(record.get("second_preferences")),
             third_preferences=_as_int(record.get("third_preferences")),

@@ -20,6 +20,7 @@ from school_finder.models.school import (
 )
 from school_finder.models.search import PostcodeLocation, SchoolSearchRequest, SchoolSearchResult
 from school_finder.ui.detail import (
+    _admission_entry_label,
     academic_rows,
     admissions_rows,
     available_trend_metrics,
@@ -429,7 +430,8 @@ def test_admissions_rows_and_trend_metrics():
         location=school.location,
         academics=school.academics,
         admissions=AdmissionsInformation(
-            data_year="2026",
+            data_year="2026/27",
+            entry_year="7",
             first_preferences=250,
             second_preferences=100,
             third_preferences=75,
@@ -447,10 +449,15 @@ def test_admissions_rows_and_trend_metrics():
     )
     rows = admissions_rows(school)
     values = {row["Measure"]: row["School"] for row in rows}
+    assert values["Admissions year"] == "2026/27"
+    assert values["Entry point"] == "Year 7"
     assert values["Admissions demand"] == "High"
     assert values["First preferences"] == "250"
     assert values["First preferences per offer"] == "1.25"
     assert values["National demand percentile"] == "88%"
+    assert _admission_entry_label("R") == "Reception"
+    assert _admission_entry_label(None) == "—"
+    assert _admission_entry_label(" ") == "—"
 
     history = pd.DataFrame(
         [
@@ -461,3 +468,30 @@ def test_admissions_rows_and_trend_metrics():
     assert "first_preferences_per_offer" in available_trend_metrics(history, "admissions")
     chart = trend_frame(history, "admissions", "first_preferences_per_offer")
     assert chart["School"].tolist() == [1.1, 1.25]
+
+
+def test_admission_arrangement_rows_show_authority_selection_and_pan():
+    from school_finder.models.admissions import AdmissionArrangementSummary, AdmissionEntryPoint
+    from school_finder.ui.detail import admission_arrangement_rows
+
+    rows = admission_arrangement_rows(
+        AdmissionArrangementSummary(
+            admission_authority="Academy trust",
+            selective=False,
+            entry_points=(AdmissionEntryPoint("7", 2027, 255),),
+            arrangements_year="2027/28",
+        )
+    )
+    assert rows == [
+        {"Measure": "Admission authority", "School": "Academy trust"},
+        {"Measure": "Selection", "School": "Non-selective"},
+        {"Measure": "Published admission number — Year 7", "School": "255"},
+        {"Measure": "Entry year — Year 7", "School": "September 2027"},
+        {"Measure": "Admission arrangements", "School": "2027/28"},
+    ]
+
+    selective = admission_arrangement_rows(
+        AdmissionArrangementSummary(selective=True)
+    )
+    assert selective == [{"Measure": "Selection", "School": "Selective"}]
+    assert admission_arrangement_rows(AdmissionArrangementSummary()) == []

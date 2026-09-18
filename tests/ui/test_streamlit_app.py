@@ -450,7 +450,8 @@ def test_render_school_card_shows_admissions_demand(monkeypatch):
     school = replace(
         _school(),
         admissions=AdmissionsInformation(
-            data_year="2026",
+            data_year="2026/27",
+            entry_year="7",
             first_preferences_per_offer=1.24,
             demand_band="High",
         ),
@@ -461,7 +462,7 @@ def test_render_school_card_shows_admissions_demand(monkeypatch):
 
     assert any(
         call[0] == "caption"
-        and call[1] == "Admissions demand: High • 1.24 first preferences per offer (2026 entry)"
+        and call[1] == "Admissions demand: High • 1.24 first preferences per offer (2026/27) • Year 7 entry"
         for call in fake.calls
     )
 
@@ -850,7 +851,8 @@ def test_render_admissions_shows_latest_data_context_and_predecessor(monkeypatch
     school = replace(
         _school(),
         admissions=AdmissionsInformation(
-            data_year="2026",
+            data_year="2026/27",
+            entry_year="7",
             first_preferences=240,
             total_offers=200,
             first_preferences_per_offer=1.2,
@@ -863,7 +865,7 @@ def test_render_admissions_shows_latest_data_context_and_predecessor(monkeypatch
 
     streamlit_app._render_admissions(school)
 
-    assert ("caption", "Admissions data: 2026 entry") in fake.calls
+    assert ("caption", "Admissions data: 2026/27 • Year 7 entry") in fake.calls
     assert any(call[0] == "info" and "not a probability of admission" in call[1] for call in fake.calls)
     assert any(call[0] == "caption" and "Predecessor School (URN 999999)" in call[1] for call in fake.calls)
 
@@ -2252,3 +2254,68 @@ def test_my_schools_page_shows_missing_current_urn_when_dataset_has_no_school(mo
         call[0] == "caption" and "may have closed or changed URN" in call[1]
         for call in fake.calls
     )
+
+
+def test_render_admissions_shows_official_arrangements_and_directory(monkeypatch):
+    from school_finder.models.admissions import AdmissionArrangementSummary, AdmissionEntryPoint
+
+    fake = FakeStreamlit()
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    monkeypatch.setattr(
+        streamlit_app,
+        "_cached_admission_arrangements",
+        lambda school: AdmissionArrangementSummary(
+            admission_authority="Academy trust",
+            selective=False,
+            entry_points=(AdmissionEntryPoint("7", 2027, 255),),
+            arrangements_year="2027/28",
+            source_name="Hampshire County Council",
+            source_url="https://example.test/policy.pdf",
+            directory_url="https://example.test/school",
+        ),
+    )
+
+    streamlit_app._render_admissions(_school())
+
+    assert ("subheader", "Admission arrangements") in fake.calls
+    assert ("markdown", "[Official admission arrangements](https://example.test/policy.pdf)") in fake.calls
+    assert ("markdown", "[Official school admissions profile](https://example.test/school)") in fake.calls
+    assert ("subheader", "Applications and offers") in fake.calls
+
+
+def test_render_admissions_handles_arrangements_lookup_failure(monkeypatch):
+    fake = FakeStreamlit()
+    monkeypatch.setattr(streamlit_app, "st", fake)
+
+    def fail(_school):
+        raise SchoolFinderError("offline")
+
+    monkeypatch.setattr(streamlit_app, "_cached_admission_arrangements", fail)
+    streamlit_app._render_admissions(_school())
+
+    assert any(
+        call[0] == "caption" and "could not be loaded right now" in call[1]
+        for call in fake.calls
+    )
+
+
+def test_render_admissions_does_not_duplicate_identical_official_source_link(monkeypatch):
+    from school_finder.models.admissions import AdmissionArrangementSummary
+
+    fake = FakeStreamlit()
+    monkeypatch.setattr(streamlit_app, "st", fake)
+    monkeypatch.setattr(
+        streamlit_app,
+        "_cached_admission_arrangements",
+        lambda school: AdmissionArrangementSummary(
+            admission_authority="Hampshire",
+            selective=False,
+            source_url="https://example.test/school",
+            directory_url="https://example.test/school",
+        ),
+    )
+
+    streamlit_app._render_admissions(_school())
+
+    links = [call for call in fake.calls if call[0] == "markdown" and "https://example.test/school" in call[1]]
+    assert links == [("markdown", "[Official admission arrangements](https://example.test/school)")]

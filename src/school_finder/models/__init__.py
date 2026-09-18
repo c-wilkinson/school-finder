@@ -1,5 +1,6 @@
 """Application data contracts."""
 
+from school_finder.models.admissions import AdmissionArrangementSummary, AdmissionEntryPoint
 from school_finder.models.filters import (
     FaithFilter,
     OfstedRating,
@@ -34,6 +35,8 @@ from school_finder.models.scoring import ScoreComponent, SchoolScore
 from school_finder.models.search import SchoolSearchRequest, SchoolSearchResult
 
 __all__ = [
+    "AdmissionArrangementSummary",
+    "AdmissionEntryPoint",
     "DestinationStatistics",
     "PastoralCareStatistics",
     "FaithFilter",

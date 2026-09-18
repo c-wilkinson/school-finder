@@ -22,6 +22,7 @@ from school_finder.services import search as service
 def _school_row(**overrides):
     row = {
         "urn": "100001",
+        "laestab": "8504182",
         "school_name": "Example Secondary",
         "sector": "State-funded",
         "establishment_type": "Academy converter",
@@ -406,6 +407,7 @@ def test_search_service_returns_application_models_and_passes_request(tmp_path: 
     assert result.request is request
     assert result.postcode is postcode
     assert result.schools[0].identity.name == "Example Secondary"
+    assert result.schools[0].identity.establishment_number == "4182"
     assert result.schools[0].academics.attainment8 == 50.2
     assert result.flat_records[0]["school_name"] == "Example Secondary"
     assert called["request"] is request

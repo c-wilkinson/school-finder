@@ -118,6 +118,7 @@ OUTPUT_COLUMNS = [
     "easting",
     "northing",
     "urn",
+    "laestab",
     "website",
     "telephone",
     "source_date",
@@ -216,6 +217,7 @@ PASTORAL_COLUMNS = [
 
 ADMISSIONS_COLUMNS = [
     "admission_year",
+    "entry_year",
     "first_preferences",
     "second_preferences",
     "third_preferences",

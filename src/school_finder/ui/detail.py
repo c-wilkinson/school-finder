@@ -9,6 +9,7 @@ from typing import Callable
 
 import pandas as pd
 
+from school_finder.models.admissions import AdmissionArrangementSummary
 from school_finder.models.school import SchoolBenchmarks, SchoolResult, SubjectResult
 from school_finder.models.search import SchoolSearchResult
 from school_finder.ui.formatting import (
@@ -286,11 +287,58 @@ def destination_rows(
 
 
 
+def admission_arrangement_rows(
+    arrangements: AdmissionArrangementSummary,
+) -> list[dict[str, str]]:
+    """Return factual current admission-arrangement context."""
+    if arrangements.selective is True:
+        selection = "Selective"
+    elif arrangements.selective is False:
+        selection = "Non-selective"
+    else:
+        selection = MISSING
+
+    values: list[tuple[str, str]] = [
+        ("Admission authority", arrangements.admission_authority or MISSING),
+        ("Selection", selection),
+    ]
+    for entry_point in arrangements.entry_points:
+        values.append(
+            (
+                f"Published admission number — Year {entry_point.year_group}",
+                str(entry_point.published_admission_number),
+            )
+        )
+        values.append(
+            (
+                f"Entry year — Year {entry_point.year_group}",
+                f"September {entry_point.entry_year}",
+            )
+        )
+    if arrangements.arrangements_year:
+        values.append(("Admission arrangements", arrangements.arrangements_year))
+    return [
+        {"Measure": label, "School": value}
+        for label, value in values
+        if value != MISSING
+    ]
+
+
+def _admission_entry_label(value: str | None) -> str:
+    if value is None:
+        return MISSING
+    entry = value.strip().upper()
+    if entry == "R":
+        return "Reception"
+    return f"Year {entry}" if entry else MISSING
+
+
 def admissions_rows(school: SchoolResult) -> list[dict[str, str]]:
     """Return the latest published school-level applications/offers summary."""
     admissions = school.admissions
     values: tuple[tuple[str, str], ...] = (
-        ("Entry year", admissions.data_year or MISSING),
+        ("Admissions year", admissions.data_year or MISSING),
+        ("Entry point", _admission_entry_label(admissions.entry_year)),
         ("Admissions demand", admissions.demand_band or MISSING),
         ("First preferences", format_integer(admissions.first_preferences)),
         ("Second preferences", format_integer(admissions.second_preferences)),

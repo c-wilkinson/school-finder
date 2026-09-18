@@ -35,7 +35,8 @@ class Session:
 def _row(**overrides):
     row = {
         "school_urn": "100001",
-        "entry_year": "2026",
+        "time_period": "202627",
+        "entry_year": "7",
         "school_name": "Example School",
         "school_laestab": "850/4001",
         "school_phase": "Secondary",
@@ -75,7 +76,7 @@ def test_read_admissions_history_filters_secondary_aggregates_routes_and_bands(t
     path = tmp_path / "admissions.csv"
     pd.DataFrame(
         [
-            _row(entry_year="2025", first_preferences="100", total_offers="200"),
+            _row(time_period="202526", first_preferences="100", total_offers="200"),
             _row(),
             _row(first_preferences="60", total_preferences="100", total_offers="50"),
             _row(
@@ -116,7 +117,7 @@ def test_read_admissions_history_filters_secondary_aggregates_routes_and_bands(t
     ).to_csv(path, index=False)
 
     result = admissions.read_admissions_history(path)
-    latest = result[result["admission_year"].eq("2026")].set_index("urn")
+    latest = result[result["admission_year"].eq("2026/27")].set_index("urn")
 
     # Split routes for one school/year are combined.
     assert latest.loc["100001", "first_preferences"] == 300
@@ -143,6 +144,7 @@ def test_read_admissions_history_accepts_aliases_and_preserves_missing_metrics(t
             {
                 "URN_GIAS": "1",
                 "academic_year": "2026/27",
+                "entry_year": "7",
                 "establishmentname": "Alias School",
                 "laestab_gias": "8504001",
                 "phase_of_education": "State-funded secondary",
@@ -155,6 +157,7 @@ def test_read_admissions_history_accepts_aliases_and_preserves_missing_metrics(t
     result = admissions.read_admissions_history(path).iloc[0]
     assert result["urn"] == "1"
     assert result["admission_year"] == "2026/27"
+    assert result["entry_year"] == "7"
     assert result["first_preferences"] == 100
     assert pd.isna(result["second_preferences"])
     assert pd.isna(result["total_offers"])
@@ -164,21 +167,28 @@ def test_read_admissions_history_accepts_aliases_and_preserves_missing_metrics(t
 
 def test_read_admissions_history_validates_required_columns_and_rows(tmp_path: Path):
     missing_urn = tmp_path / "missing-urn.csv"
-    pd.DataFrame([{"entry_year": "2026", "school_phase": "Secondary"}]).to_csv(
+    pd.DataFrame([{"time_period": "202627", "entry_year": "7", "school_phase": "Secondary"}]).to_csv(
         missing_urn, index=False
     )
     with pytest.raises(SchoolFinderError, match="missing school identifier"):
         admissions.read_admissions_history(missing_urn)
 
-    missing_year = tmp_path / "missing-year.csv"
-    pd.DataFrame([{"school_urn": "1", "school_phase": "Secondary"}]).to_csv(
-        missing_year, index=False
+    missing_time = tmp_path / "missing-time.csv"
+    pd.DataFrame([{"school_urn": "1", "entry_year": "7", "school_phase": "Secondary"}]).to_csv(
+        missing_time, index=False
+    )
+    with pytest.raises(SchoolFinderError, match="missing time period"):
+        admissions.read_admissions_history(missing_time)
+
+    missing_entry = tmp_path / "missing-entry.csv"
+    pd.DataFrame([{"school_urn": "1", "time_period": "202627", "school_phase": "Secondary"}]).to_csv(
+        missing_entry, index=False
     )
     with pytest.raises(SchoolFinderError, match="missing entry year"):
-        admissions.read_admissions_history(missing_year)
+        admissions.read_admissions_history(missing_entry)
 
     missing_phase = tmp_path / "missing-phase.csv"
-    pd.DataFrame([{"school_urn": "1", "entry_year": "2026"}]).to_csv(
+    pd.DataFrame([{"school_urn": "1", "time_period": "202627", "entry_year": "7"}]).to_csv(
         missing_phase, index=False
     )
     with pytest.raises(SchoolFinderError, match="missing school phase"):
@@ -194,19 +204,25 @@ def test_read_admissions_history_validates_required_columns_and_rows(tmp_path: P
     with pytest.raises(SchoolFinderError, match="no identifiable secondary schools"):
         admissions.read_admissions_history(no_identity)
 
+    no_entry_value = tmp_path / "no-entry-value.csv"
+    pd.DataFrame([_row(entry_year="")]).to_csv(no_entry_value, index=False)
+    with pytest.raises(SchoolFinderError, match="no identifiable secondary schools"):
+        admissions.read_admissions_history(no_entry_value)
 
-def test_read_admissions_school_uses_latest_entry_year(tmp_path: Path):
+
+def test_read_admissions_school_uses_latest_admissions_year(tmp_path: Path):
     path = tmp_path / "latest.csv"
     pd.DataFrame(
         [
-            _row(entry_year="2024/25", first_preferences="100"),
-            _row(entry_year="2025/26", first_preferences="150"),
-            _row(entry_year="2026/27", first_preferences="200"),
+            _row(time_period="202425", first_preferences="100"),
+            _row(time_period="202526", first_preferences="150"),
+            _row(time_period="202627", first_preferences="200"),
         ]
     ).to_csv(path, index=False)
 
     row = admissions.read_admissions_school(path).iloc[0]
     assert row["admission_year"] == "2026/27"
+    assert row["entry_year"] == "7"
     assert row["first_preferences"] == 200
 
 
@@ -215,7 +231,8 @@ def test_read_admissions_history_accepts_laestab_without_urn_and_separate_codes(
     pd.DataFrame(
         [
             {
-                "Year": "2026",
+                "time_period": "202627",
+                "entry_year": "7",
                 "Phase": "Secondary",
                 "LA": "850",
                 "Estab": "4001",
@@ -240,7 +257,8 @@ def test_resolve_admissions_to_gias_uses_laestab_before_source_urn():
                 "urn": "999999",
                 "laestab": "850/4001",
                 "school_name": "Historic label",
-                "admission_year": "2026",
+                "admission_year": "2026/27",
+                "entry_year": "7",
                 "first_preferences": 220,
                 "total_offers": 200,
             }
@@ -252,6 +270,7 @@ def test_resolve_admissions_to_gias_uses_laestab_before_source_urn():
 
     row = admissions.resolve_admissions_to_gias(source, schools).iloc[0]
     assert row["urn"] == "100001"
+    assert row["entry_year"] == "7"
     assert row["first_preferences_per_offer"] == pytest.approx(1.1)
 
 
@@ -269,6 +288,7 @@ def test_resolve_admissions_to_gias_retains_source_urn_without_laestab_lookup():
     schools = pd.DataFrame([{"urn": "100001", "school_name": "Current School"}])
     row = admissions.resolve_admissions_to_gias(source, schools).iloc[0]
     assert row["urn"] == "100001"
+    assert row["entry_year"] == ""
 
 
 def test_resolve_admissions_to_gias_does_not_guess_ambiguous_laestab():
@@ -314,7 +334,8 @@ def test_read_admissions_history_accepts_publisher_2026_school_level_headers(tmp
         [
             {
                 "school_phase": "Secondary",
-                "entry_year": "2026",
+                "time_period": "202627",
+                "entry_year": "7",
                 "school_laestab": "8504002",
                 "school_name": "The Costello School",
                 "school_urn": "138287",
@@ -337,6 +358,8 @@ def test_read_admissions_history_accepts_publisher_2026_school_level_headers(tmp
 
     assert row["urn"] == "138287"
     assert row["laestab"] == "8504002"
+    assert row["admission_year"] == "2026/27"
+    assert row["entry_year"] == "7"
     assert row["first_preferences"] == 187
     assert row["second_preferences"] == 130
     assert row["third_preferences"] == 90
@@ -350,13 +373,62 @@ def test_read_admissions_history_accepts_publisher_2026_school_level_headers(tmp
     assert row["first_preferences_per_offer"] == pytest.approx(187 / 211)
 
 
+def test_read_admissions_history_keeps_time_period_and_entry_point_separate(tmp_path: Path):
+    path = tmp_path / "separate-year-and-entry.csv"
+    pd.DataFrame(
+        [
+            _row(time_period="202526", entry_year="7", first_preferences="100", total_offers="100"),
+            _row(time_period="202627", entry_year="7", first_preferences="120", total_offers="100"),
+            _row(time_period="202627", entry_year="9", first_preferences="60", total_offers="50"),
+        ]
+    ).to_csv(path, index=False)
+
+    result = admissions.read_admissions_history(path)
+
+    assert result[["admission_year", "entry_year"]].values.tolist() == [
+        ["2025/26", "7"],
+        ["2026/27", "7"],
+        ["2026/27", "9"],
+    ]
+    assert result["first_preferences"].tolist() == [100, 120, 60]
+
+
+def test_read_admissions_school_prefers_year_7_when_latest_period_has_multiple_entry_points(tmp_path: Path):
+    path = tmp_path / "latest-entry-point.csv"
+    pd.DataFrame(
+        [
+            _row(time_period="202627", entry_year="9", first_preferences="90"),
+            _row(time_period="202627", entry_year="7", first_preferences="180"),
+        ]
+    ).to_csv(path, index=False)
+
+    row = admissions.read_admissions_school(path).iloc[0]
+
+    assert row["admission_year"] == "2026/27"
+    assert row["entry_year"] == "7"
+    assert row["first_preferences"] == 180
+
+
+def test_read_admissions_school_uses_other_entry_point_when_no_year_7_or_9_exists(tmp_path: Path):
+    path = tmp_path / "other-entry-point.csv"
+    pd.DataFrame([_row(time_period="202627", entry_year="12", first_preferences="42")]).to_csv(
+        path, index=False
+    )
+
+    row = admissions.read_admissions_school(path).iloc[0]
+
+    assert row["entry_year"] == "12"
+    assert row["first_preferences"] == 42
+
+
 def test_read_admissions_history_rejects_unrecognised_core_metric_schema(tmp_path: Path):
     path = tmp_path / "schema-drift.csv"
     pd.DataFrame(
         [
             {
                 "school_phase": "Secondary",
-                "entry_year": "2026",
+                "time_period": "202627",
+                "entry_year": "7",
                 "school_laestab": "8504002",
                 "school_name": "The Costello School",
                 "school_urn": "138287",

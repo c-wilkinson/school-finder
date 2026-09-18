@@ -148,8 +148,21 @@ def _metric_values(frame: pd.DataFrame) -> dict[str, pd.Series]:
 
 
 def _normalise_year(series: pd.Series) -> pd.Series:
-    values = clean_text_series(series)
-    return values.str.replace(r"\.0$", "", regex=True)
+    values = clean_text_series(series).str.replace(r"\.0$", "", regex=True)
+    compact = values.str.replace(r"[^0-9]", "", regex=True)
+    academic = compact.str.fullmatch(r"20\d{4}", na=False)
+    values = values.copy()
+    values.loc[academic] = (
+        compact.loc[academic].str[:4]
+        + "/"
+        + compact.loc[academic].str[4:6]
+    )
+    return values
+
+
+def _normalise_entry_year(series: pd.Series) -> pd.Series:
+    values = clean_text_series(series).str.replace(r"\.0$", "", regex=True)
+    return values.str.upper()
 
 
 def _clean_identifier(series: pd.Series) -> pd.Series:
@@ -235,9 +248,9 @@ def _apply_demand_metrics(grouped: pd.DataFrame) -> pd.DataFrame:
     offers = pd.to_numeric(grouped["total_offers"], errors="coerce")
     first = pd.to_numeric(grouped["first_preferences"], errors="coerce")
     grouped["first_preferences_per_offer"] = first.div(offers.where(offers > 0))
-    grouped["admissions_demand_percentile"] = grouped.groupby("admission_year")[
-        "first_preferences_per_offer"
-    ].rank(method="average", pct=True) * 100
+    grouped["admissions_demand_percentile"] = grouped.groupby(
+        ["admission_year", "entry_year"]
+    )["first_preferences_per_offer"].rank(method="average", pct=True) * 100
 
     percentile = grouped["admissions_demand_percentile"]
     grouped["admissions_demand_band"] = pd.Series(pd.NA, index=grouped.index, dtype="string")
@@ -258,7 +271,11 @@ def _aggregate(frame: pd.DataFrame) -> pd.DataFrame:
     working = frame.assign(_school_key=source_key)
     working = working[working["_school_key"].ne("laestab:")].copy()
     grouped = (
-        working.groupby(["_school_key", "admission_year"], as_index=False, sort=False)
+        working.groupby(
+            ["_school_key", "admission_year", "entry_year"],
+            as_index=False,
+            sort=False,
+        )
         .agg(
             urn=("urn", _last_nonblank),
             school_name=("school_name", "last"),
@@ -286,6 +303,8 @@ def resolve_admissions_to_gias(admissions: pd.DataFrame, schools: pd.DataFrame) 
         resolved["laestab"] = pd.Series("", index=resolved.index, dtype="string")
     if "school_name" not in resolved.columns:
         resolved["school_name"] = pd.Series("", index=resolved.index, dtype="string")
+    if "entry_year" not in resolved.columns:
+        resolved["entry_year"] = pd.Series("", index=resolved.index, dtype="string")
     for metric in ADMISSIONS_METRICS:
         if metric not in resolved.columns:
             resolved[metric] = pd.Series(pd.NA, index=resolved.index, dtype="object")
@@ -312,7 +331,11 @@ def resolve_admissions_to_gias(admissions: pd.DataFrame, schools: pd.DataFrame) 
     # them before recomputing the demand metric and percentile.
     metric_columns = tuple(ADMISSIONS_METRICS)
     grouped = (
-        resolved.groupby(["urn", "admission_year"], as_index=False, sort=False)
+        resolved.groupby(
+            ["urn", "admission_year", "entry_year"],
+            as_index=False,
+            sort=False,
+        )
         .agg(
             school_name=("school_name", "last"),
             laestab=("laestab", "last"),
@@ -323,19 +346,25 @@ def resolve_admissions_to_gias(admissions: pd.DataFrame, schools: pd.DataFrame) 
 
 
 def read_admissions_history(path: Path) -> pd.DataFrame:
-    """Return all usable secondary-school applications/offers rows by entry year."""
+    """Return all usable secondary-school applications/offers rows by academic year."""
     frame = read_public_csv(path, "DfE school applications and offers")
     urn_col = find_column(frame, "school_urn", "urn", "urn_gias", "school urn")
-    year_col = _required_column(
+    time_col = _required_column(
+        frame,
+        "time period",
+        "time_period",
+        "academic_year",
+        "admission_year",
+        "collection_year",
+    )
+    entry_col = _required_column(
         frame,
         "entry year",
-        "admission_year",
         "entry_year",
-        "time_period",
-        "year",
-        "academic_year",
-        "entryyear",
-        "collection_year",
+        "nc_year_admission",
+        "nc year admission",
+        "year_of_admission",
+        "year of admission",
     )
     name_col = find_column(frame, "school_name", "establishment_name", "school", "establishmentname")
 
@@ -355,7 +384,8 @@ def read_admissions_history(path: Path) -> pd.DataFrame:
     result = pd.DataFrame(
         {
             "urn": urn_values,
-            "admission_year": _normalise_year(rows[year_col]),
+            "admission_year": _normalise_year(rows[time_col]),
+            "entry_year": _normalise_entry_year(rows[entry_col]),
             "school_name": (
                 clean_text_series(rows[name_col])
                 if name_col is not None
@@ -367,11 +397,14 @@ def read_admissions_history(path: Path) -> pd.DataFrame:
         index=rows.index,
     )
     identifiable = result["urn"].ne("") | result["laestab"].ne("")
-    result = result[identifiable & result["admission_year"].ne("")].copy()
+    result = result[
+        identifiable
+        & result["admission_year"].ne("")
+        & result["entry_year"].ne("")
+    ].copy()
     if result.empty:
         raise SchoolFinderError("DfE admissions CSV contained no identifiable secondary schools.")
     return _aggregate(result).reset_index(drop=True)
-
 
 def _year_key(value: object) -> int:
     text = str(value or "").strip()
@@ -379,18 +412,32 @@ def _year_key(value: object) -> int:
     return int(digits[:4] or 0)
 
 
+def _entry_priority(value: object) -> int:
+    entry = str(value or "").strip().upper()
+    if entry == "7":
+        return 0
+    if entry == "9":
+        return 1
+    return 2
+
+
 def read_admissions_school(path: Path) -> pd.DataFrame:
     """Return the latest published applications/offers row for each source school."""
     history = read_admissions_history(path).copy()
     history["_year_key"] = history["admission_year"].map(_year_key)
+    history["_entry_priority"] = history["entry_year"].map(_entry_priority)
     history["_school_key"] = _clean_identifier(history["urn"])
     history["_school_key"] = history["_school_key"].where(
         history["_school_key"].ne(""),
         "laestab:" + _normalise_laestab(history["laestab"]),
     )
     return (
-        history.sort_values(["_school_key", "_year_key"], kind="stable")
+        history.sort_values(
+            ["_school_key", "_year_key", "_entry_priority"],
+            ascending=[True, True, False],
+            kind="stable",
+        )
         .drop_duplicates("_school_key", keep="last")
-        .drop(columns=["_year_key", "_school_key"])
+        .drop(columns=["_year_key", "_entry_priority", "_school_key"])
         .reset_index(drop=True)
     )
