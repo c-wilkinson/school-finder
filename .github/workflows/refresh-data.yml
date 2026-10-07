@@ -1,4 +1,4 @@
-name: Refresh school data
+name: Refresh parquet data
 
 on:
   workflow_dispatch:
@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   refresh:
-    name: Refresh parquet data
+    name: Refresh school data
     runs-on: ubuntu-latest
 
     steps:
@@ -31,7 +31,7 @@ jobs:
 
       - name: Refresh data
         run: |
-          python school_finder.py build
+          school-finder build
 
       - name: Check for parquet changes
         id: changes
@@ -50,6 +50,7 @@ jobs:
           git config --global user.name 'GithubBot'
           git config --global user.email 'GithubBot@9bc0ff44ae664378ab0252851a8954ad.com'
           git remote set-url origin https://x-access-token:${{ secrets.TOKEN_GITHUB }}@github.com/${{ github.repository }}
+
           git add -- '*.parquet'
           git commit -m "Automated changes"
           git push
