@@ -47,6 +47,7 @@ from school_finder.ui.detail import (
     available_trend_metrics,
     academic_rows,
     admission_arrangement_rows,
+    admission_criteria_rows,
     admissions_rows,
     attendance_rows,
     behaviour_rows,
@@ -843,6 +844,26 @@ def _render_admissions(
         st.caption(
             "Published admission number and official arrangement links are not yet "
             "integrated for this admission authority."
+        )
+
+    st.subheader("Oversubscription criteria")
+    if arrangements.criteria:
+        _render_detail_table(
+            admission_criteria_rows(arrangements),
+            "No structured oversubscription criteria are currently available.",
+        )
+        st.caption(
+            "Types are School Finder's structured interpretation of the published policy; "
+            "the original criterion wording is shown alongside them."
+        )
+    elif arrangements.source_url:
+        st.caption(
+            "Structured oversubscription criteria could not be extracted from the published "
+            "policy. Use the official admission arrangements link above for the full wording."
+        )
+    else:
+        st.caption(
+            "Structured oversubscription criteria are not yet integrated for this admission authority."
         )
 
     st.subheader("Applications and offers")

@@ -495,3 +495,38 @@ def test_admission_arrangement_rows_show_authority_selection_and_pan():
     )
     assert selective == [{"Measure": "Selection", "School": "Selective"}]
     assert admission_arrangement_rows(AdmissionArrangementSummary()) == []
+
+
+def test_admission_criteria_rows_show_structured_types_and_published_wording():
+    from school_finder.models.admissions import (
+        AdmissionArrangementSummary,
+        AdmissionCriterion,
+        AdmissionCriterionKind,
+    )
+    from school_finder.ui.detail import admission_criteria_rows
+
+    rows = admission_criteria_rows(
+        AdmissionArrangementSummary(
+            criteria=(
+                AdmissionCriterion(
+                    priority=4,
+                    kinds=(AdmissionCriterionKind.SIBLING, AdmissionCriterionKind.CATCHMENT),
+                    description="Children living in the catchment area who have a sibling at the school.",
+                ),
+                AdmissionCriterion(
+                    priority=8,
+                    kinds=(AdmissionCriterionKind.OTHER,),
+                    description="Other children.",
+                ),
+            )
+        )
+    )
+    assert rows == [
+        {
+            "Priority": "4",
+            "Type": "Sibling, Catchment",
+            "Published criterion": "Children living in the catchment area who have a sibling at the school.",
+        },
+        {"Priority": "8", "Type": "Other", "Published criterion": "Other children."},
+    ]
+    assert admission_criteria_rows(AdmissionArrangementSummary()) == []

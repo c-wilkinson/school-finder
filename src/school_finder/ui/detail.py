@@ -9,7 +9,10 @@ from typing import Callable
 
 import pandas as pd
 
-from school_finder.models.admissions import AdmissionArrangementSummary
+from school_finder.models.admissions import (
+    AdmissionArrangementSummary,
+    AdmissionCriterionKind,
+)
 from school_finder.models.school import SchoolBenchmarks, SchoolResult, SubjectResult
 from school_finder.models.search import SchoolSearchResult
 from school_finder.ui.formatting import (
@@ -286,6 +289,36 @@ def destination_rows(
     )
 
 
+
+
+_CRITERION_KIND_LABELS: dict[AdmissionCriterionKind, str] = {
+    AdmissionCriterionKind.LOOKED_AFTER: "Looked-after",
+    AdmissionCriterionKind.SIBLING: "Sibling",
+    AdmissionCriterionKind.CATCHMENT: "Catchment",
+    AdmissionCriterionKind.DISTANCE: "Distance",
+    AdmissionCriterionKind.FEEDER: "Linked / feeder school",
+    AdmissionCriterionKind.FAITH: "Faith",
+    AdmissionCriterionKind.SELECTIVE: "Selection",
+    AdmissionCriterionKind.PUPIL_PREMIUM: "Pupil premium",
+    AdmissionCriterionKind.SERVICE_PREMIUM: "Service premium",
+    AdmissionCriterionKind.STAFF_CHILD: "Child of staff",
+    AdmissionCriterionKind.SOCIAL_MEDICAL: "Social / medical need",
+    AdmissionCriterionKind.OTHER: "Other",
+}
+
+
+def admission_criteria_rows(
+    arrangements: AdmissionArrangementSummary,
+) -> list[dict[str, str]]:
+    """Return structured oversubscription criteria while preserving published wording."""
+    return [
+        {
+            "Priority": str(criterion.priority),
+            "Type": ", ".join(_CRITERION_KIND_LABELS[kind] for kind in criterion.kinds),
+            "Published criterion": criterion.description,
+        }
+        for criterion in arrangements.criteria
+    ]
 
 def admission_arrangement_rows(
     arrangements: AdmissionArrangementSummary,

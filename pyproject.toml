@@ -12,6 +12,7 @@ dependencies = [
     "pyarrow>=14",
     "requests>=2.31",
     "odfpy>=1.4.1",
+    "pypdf>=5",
 ]
 
 [project.optional-dependencies]

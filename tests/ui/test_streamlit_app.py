@@ -2257,7 +2257,12 @@ def test_my_schools_page_shows_missing_current_urn_when_dataset_has_no_school(mo
 
 
 def test_render_admissions_shows_official_arrangements_and_directory(monkeypatch):
-    from school_finder.models.admissions import AdmissionArrangementSummary, AdmissionEntryPoint
+    from school_finder.models.admissions import (
+        AdmissionArrangementSummary,
+        AdmissionCriterion,
+        AdmissionCriterionKind,
+        AdmissionEntryPoint,
+    )
 
     fake = FakeStreamlit()
     monkeypatch.setattr(streamlit_app, "st", fake)
@@ -2269,6 +2274,13 @@ def test_render_admissions_shows_official_arrangements_and_directory(monkeypatch
             selective=False,
             entry_points=(AdmissionEntryPoint("7", 2027, 255),),
             arrangements_year="2027/28",
+            criteria=(
+                AdmissionCriterion(
+                    1,
+                    (AdmissionCriterionKind.LOOKED_AFTER,),
+                    "Looked after children or children who were previously looked after.",
+                ),
+            ),
             source_name="Hampshire County Council",
             source_url="https://example.test/policy.pdf",
             directory_url="https://example.test/school",
@@ -2280,6 +2292,11 @@ def test_render_admissions_shows_official_arrangements_and_directory(monkeypatch
     assert ("subheader", "Admission arrangements") in fake.calls
     assert ("markdown", "[Official admission arrangements](https://example.test/policy.pdf)") in fake.calls
     assert ("markdown", "[Official school admissions profile](https://example.test/school)") in fake.calls
+    assert ("subheader", "Oversubscription criteria") in fake.calls
+    assert any(
+        call[0] == "dataframe" and call[1] == ("Priority", "Type", "Published criterion")
+        for call in fake.calls
+    )
     assert ("subheader", "Applications and offers") in fake.calls
 
 
