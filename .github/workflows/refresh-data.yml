@@ -37,7 +37,7 @@ jobs:
         id: changes
         shell: bash
         run: |
-          if git status --porcelain -- '*.parquet' | grep -q .; then
+          if git status --porcelain -- data/ | grep -q .; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
           else
             echo "changed=false" >> "$GITHUB_OUTPUT"
@@ -51,7 +51,7 @@ jobs:
           git config --global user.email 'GithubBot@9bc0ff44ae664378ab0252851a8954ad.com'
           git remote set-url origin https://x-access-token:${{ secrets.TOKEN_GITHUB }}@github.com/${{ github.repository }}
 
-          git add -- '*.parquet'
+          git add -- data/
           git commit -m "Automated changes"
           git push
 
