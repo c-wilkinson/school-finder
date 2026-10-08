@@ -3,6 +3,7 @@
 [![CI](https://github.com/c-wilkinson/school-finder/actions/workflows/ci.yml/badge.svg)](https://github.com/c-wilkinson/school-finder/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/c-wilkinson/school-finder/branch/main/graph/badge.svg)](https://codecov.io/gh/c-wilkinson/school-finder)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
+Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 **Find, compare and rank secondary schools in England by postcode**, using official DfE, Ofsted and ONS data.
 
