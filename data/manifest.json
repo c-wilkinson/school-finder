@@ -1,6 +1,6 @@
 {
   "coverage": "England",
-  "dataset_version": "gias-2026-10-15__onspd-2026-08",
+  "dataset_version": "gias-2026-10-16__onspd-2026-08",
   "files": {
     "benchmark_history.parquet": {
       "bytes": 429121,
@@ -100,7 +100,7 @@
       "sha256": "f0a8291be2ce313a08e57263bd223aec83d4dc362afbcab57ca446a0db2170bb"
     },
     "history.parquet": {
-      "bytes": 24841331,
+      "bytes": 24623435,
       "columns": [
         "urn",
         "domain",
@@ -112,8 +112,8 @@
         "source_kind",
         "source_link_depth"
       ],
-      "rows": 8164261,
-      "sha256": "3df7ac561cd2afd924d0067d49a832c4fcaf961f3cbcdd62e466c30c0f53e776"
+      "rows": 8088878,
+      "sha256": "4cb73e44913d3f88b5fd6e1a9d7d44c4702c0949d039ea0f312c96f8ea1a39ab"
     },
     "postcodes.parquet": {
       "bytes": 63252765,
@@ -134,7 +134,7 @@
       "sha256": "a2fdc3559da5b49464b6f84c02158d241dd9592561931e62adc81cd012539aee"
     },
     "schools.parquet": {
-      "bytes": 5320992,
+      "bytes": 5284392,
       "columns": [
         "urn",
         "school_name",
@@ -290,7 +290,7 @@
         "pastoral_source_url"
       ],
       "rows": 26482,
-      "sha256": "1723bcf5c0b266d0ac04879121fb43d919761ce3aefa50c512a843f7a8e36d0e"
+      "sha256": "5636724cc8dd1bacb52118e9eb7484f530a0687542ed07f31dfd5357a84fac23"
     },
     "subjects.parquet": {
       "bytes": 1037294,
@@ -314,7 +314,7 @@
       "sha256": "e74d0435fa84e793675db7528586246d3b99c323d106e104108639d410a6cf15"
     }
   },
-  "generated_at": "2026-10-15T04:40:26.347012Z",
+  "generated_at": "2026-10-16T04:34:38.626177Z",
   "schema_version": 9,
   "sources": {
     "attendance_benchmarks": {
@@ -353,14 +353,14 @@
       "release_label": "EES dataset 7be58881-d49f-4e3b-b2b6-0877a1a0fe6e (latest)"
     },
     "gias": {
-      "download_url": "https://ea-edubase-api-prod.azurewebsites.net/edubase/downloads/public/edubasealldata20261015.csv",
+      "download_url": "https://ea-edubase-api-prod.azurewebsites.net/edubase/downloads/public/edubasealldata20261016.csv",
       "name": "Get Information About Schools",
-      "source_date": "2026-10-15"
+      "source_date": "2026-10-16"
     },
     "gias_links": {
-      "download_url": "https://ea-edubase-api-prod.azurewebsites.net/edubase/downloads/public/links_edubasealldata20261015.csv",
+      "download_url": "https://ea-edubase-api-prod.azurewebsites.net/edubase/downloads/public/links_edubasealldata20261016.csv",
       "name": "Get Information About Schools establishment links",
-      "source_date": "2026-10-15"
+      "source_date": "2026-10-16"
     },
     "ks4_benchmarks": {
       "download_url": "https://api.education.gov.uk/statistics/v1/data-sets/19e39901-560d-f972-b6f3-dd085539c095/csv",
