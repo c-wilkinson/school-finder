@@ -134,7 +134,7 @@
       "sha256": "a2fdc3559da5b49464b6f84c02158d241dd9592561931e62adc81cd012539aee"
     },
     "schools.parquet": {
-      "bytes": 5284392,
+      "bytes": 5286075,
       "columns": [
         "urn",
         "school_name",
@@ -290,7 +290,7 @@
         "pastoral_source_url"
       ],
       "rows": 26482,
-      "sha256": "5636724cc8dd1bacb52118e9eb7484f530a0687542ed07f31dfd5357a84fac23"
+      "sha256": "46252b7e052179825240f5551b5827746c718aabe6e1ce9d6f5cb6ff2265cf97"
     },
     "subjects.parquet": {
       "bytes": 1037294,
@@ -314,7 +314,7 @@
       "sha256": "e74d0435fa84e793675db7528586246d3b99c323d106e104108639d410a6cf15"
     }
   },
-  "generated_at": "2026-10-16T04:34:38.626177Z",
+  "generated_at": "2026-10-16T13:19:11.898810Z",
   "schema_version": 9,
   "sources": {
     "attendance_benchmarks": {
@@ -378,9 +378,9 @@
       "release_label": "EES dataset 1ae39901-b462-df76-b108-640a078d7944 (latest)"
     },
     "ofsted": {
-      "download_url": "https://assets.publishing.service.gov.uk/media/6aa0175392e72b8ac437ef37/Management_information_-_state-funded_schools_-_latest_inspections_as_at_31_August_2026.csv",
+      "download_url": "https://assets.publishing.service.gov.uk/media/6ad095a72de3184ccf8b818d/Management_information_-_state-funded_schools_-_latest_inspections_as_at_30_Sep_2026.csv",
       "name": "Ofsted state-funded school inspections",
-      "release_label": "Management information - state-funded schools - latest inspections as at 31 August 2026"
+      "release_label": "Management information - state-funded schools - latest inspections as at 30 Sep 2026"
     },
     "ofsted_independent": {
       "download_url": "https://assets.publishing.service.gov.uk/media/6a9947b6f5b35599aec19149/Management_information_-_non-association_independent_schools_most_recent_inspections_data_as_at_31_July_2026.csv",
