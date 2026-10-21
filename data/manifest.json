@@ -1,6 +1,6 @@
 {
   "coverage": "England",
-  "dataset_version": "gias-2026-10-20__onspd-2026-08",
+  "dataset_version": "gias-2026-10-21__onspd-2026-08",
   "files": {
     "benchmark_history.parquet": {
       "bytes": 429121,
@@ -113,7 +113,7 @@
         "source_link_depth"
       ],
       "rows": 8088878,
-      "sha256": "4cb73e44913d3f88b5fd6e1a9d7d44c4702c0949d039ea0f312c96f8ea1a39ab"
+      "sha256": "96bc57e414c39055bc185d3388638b5e93074a98eff6457eb2be9860377378df"
     },
     "postcodes.parquet": {
       "bytes": 63252765,
@@ -134,7 +134,7 @@
       "sha256": "a2fdc3559da5b49464b6f84c02158d241dd9592561931e62adc81cd012539aee"
     },
     "schools.parquet": {
-      "bytes": 5285985,
+      "bytes": 5286002,
       "columns": [
         "urn",
         "school_name",
@@ -290,7 +290,7 @@
         "pastoral_source_url"
       ],
       "rows": 26483,
-      "sha256": "f2cccea4c0695792c4c3e18bc718120ed068b7c8537eac4e939bedfc72ae55f4"
+      "sha256": "c1253c087cb40e471d7fd15903b2a9cff1dbb3a65b92ca48b384cfbc3bd4ea7f"
     },
     "subjects.parquet": {
       "bytes": 1037294,
@@ -314,7 +314,7 @@
       "sha256": "e74d0435fa84e793675db7528586246d3b99c323d106e104108639d410a6cf15"
     }
   },
-  "generated_at": "2026-10-20T04:52:56.892165Z",
+  "generated_at": "2026-10-21T04:46:56.137753Z",
   "schema_version": 9,
   "sources": {
     "attendance_benchmarks": {
@@ -353,14 +353,14 @@
       "release_label": "EES dataset 7be58881-d49f-4e3b-b2b6-0877a1a0fe6e (latest)"
     },
     "gias": {
-      "download_url": "https://ea-edubase-api-prod.azurewebsites.net/edubase/downloads/public/edubasealldata20261020.csv",
+      "download_url": "https://ea-edubase-api-prod.azurewebsites.net/edubase/downloads/public/edubasealldata20261021.csv",
       "name": "Get Information About Schools",
-      "source_date": "2026-10-20"
+      "source_date": "2026-10-21"
     },
     "gias_links": {
-      "download_url": "https://ea-edubase-api-prod.azurewebsites.net/edubase/downloads/public/links_edubasealldata20261020.csv",
+      "download_url": "https://ea-edubase-api-prod.azurewebsites.net/edubase/downloads/public/links_edubasealldata20261021.csv",
       "name": "Get Information About Schools establishment links",
-      "source_date": "2026-10-20"
+      "source_date": "2026-10-21"
     },
     "ks4_benchmarks": {
       "download_url": "https://api.education.gov.uk/statistics/v1/data-sets/19e39901-560d-f972-b6f3-dd085539c095/csv",
