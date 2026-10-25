@@ -1,6 +1,6 @@
 {
   "coverage": "England",
-  "dataset_version": "gias-2026-10-24__onspd-2026-08",
+  "dataset_version": "gias-2026-10-25__onspd-2026-08",
   "files": {
     "benchmark_history.parquet": {
       "bytes": 429121,
@@ -290,7 +290,7 @@
         "pastoral_source_url"
       ],
       "rows": 26481,
-      "sha256": "34c46b4d5bae432ec50cd8a9c461450827ad1ed02f50ce04e0fb9e5b4e5e6111"
+      "sha256": "ce2eb15b00c4fb32c63019e698497cc4088adb9a7c8fa2cd9a1cfb2bd21ba699"
     },
     "subjects.parquet": {
       "bytes": 1037294,
@@ -314,7 +314,7 @@
       "sha256": "e74d0435fa84e793675db7528586246d3b99c323d106e104108639d410a6cf15"
     }
   },
-  "generated_at": "2026-10-24T04:38:12.311456Z",
+  "generated_at": "2026-10-25T04:42:47.228919Z",
   "schema_version": 9,
   "sources": {
     "attendance_benchmarks": {
@@ -353,14 +353,14 @@
       "release_label": "EES dataset 7be58881-d49f-4e3b-b2b6-0877a1a0fe6e (latest)"
     },
     "gias": {
-      "download_url": "https://ea-edubase-api-prod.azurewebsites.net/edubase/downloads/public/edubasealldata20261024.csv",
+      "download_url": "https://ea-edubase-api-prod.azurewebsites.net/edubase/downloads/public/edubasealldata20261025.csv",
       "name": "Get Information About Schools",
-      "source_date": "2026-10-24"
+      "source_date": "2026-10-25"
     },
     "gias_links": {
-      "download_url": "https://ea-edubase-api-prod.azurewebsites.net/edubase/downloads/public/links_edubasealldata20261024.csv",
+      "download_url": "https://ea-edubase-api-prod.azurewebsites.net/edubase/downloads/public/links_edubasealldata20261025.csv",
       "name": "Get Information About Schools establishment links",
-      "source_date": "2026-10-24"
+      "source_date": "2026-10-25"
     },
     "ks4_benchmarks": {
       "download_url": "https://api.education.gov.uk/statistics/v1/data-sets/19e39901-560d-f972-b6f3-dd085539c095/csv",
