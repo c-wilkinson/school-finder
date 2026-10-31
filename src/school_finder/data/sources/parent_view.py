@@ -780,6 +780,8 @@ def refresh_parent_view_for_frame(
                 continue
             for column in PASTORAL_OUTPUT_COLUMNS:
                 if column in live.index:
+                    if column not in result.columns:
+                        result[column] = pd.Series(pd.NA, index=result.index, dtype="object")
                     result.at[index, column] = live[column]
         return result
     finally:

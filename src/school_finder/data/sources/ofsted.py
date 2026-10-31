@@ -206,10 +206,11 @@ def read_ofsted_quality(path: Path) -> pd.DataFrame:
         "Outcome",
     )
     if outcome_col is not None:
-        retained = frame[outcome_col].map(_rating_from_ungraded_outcome)
-        result["ofsted_rating"] = result["ofsted_rating"].where(
-            result["ofsted_rating"].notna(), retained
-        )
+        # Both sides must be string-typed before filling missing Arrow values.
+        # A column containing only nulls may otherwise have null[pyarrow] dtype.
+        retained = frame[outcome_col].map(_rating_from_ungraded_outcome).astype("string")
+        ratings = result["ofsted_rating"].astype("string")
+        result["ofsted_rating"] = ratings.fillna(retained)
 
     for date_col in ("ofsted_inspection_date", "ofsted_publication_date"):
         result[date_col] = pd.to_datetime(result[date_col], errors="coerce", dayfirst=True)
