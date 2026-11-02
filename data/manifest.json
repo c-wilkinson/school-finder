@@ -1,6 +1,6 @@
 {
   "coverage": "England",
-  "dataset_version": "gias-2026-11-01__onspd-2026-08",
+  "dataset_version": "gias-2026-11-02__onspd-2026-08",
   "files": {
     "benchmark_history.parquet": {
       "bytes": 429121,
@@ -134,7 +134,7 @@
       "sha256": "a2fdc3559da5b49464b6f84c02158d241dd9592561931e62adc81cd012539aee"
     },
     "schools.parquet": {
-      "bytes": 5285077,
+      "bytes": 5285051,
       "columns": [
         "urn",
         "school_name",
@@ -290,7 +290,7 @@
         "pastoral_source_url"
       ],
       "rows": 26476,
-      "sha256": "5ecb691b16932504afa16e73fc3cf69e3dcf8e8d14ec9db75e01622771f3a0b5"
+      "sha256": "946b4be503bebc9b259838aedb09c409062d58f4a763fcbe4c437db56225a9a1"
     },
     "subjects.parquet": {
       "bytes": 1037294,
@@ -314,7 +314,7 @@
       "sha256": "e74d0435fa84e793675db7528586246d3b99c323d106e104108639d410a6cf15"
     }
   },
-  "generated_at": "2026-11-01T06:03:26.172071Z",
+  "generated_at": "2026-11-02T06:02:57.106466Z",
   "schema_version": 9,
   "sources": {
     "attendance_benchmarks": {
@@ -353,14 +353,14 @@
       "release_label": "EES dataset 7be58881-d49f-4e3b-b2b6-0877a1a0fe6e (latest)"
     },
     "gias": {
-      "download_url": "https://ea-edubase-api-prod.azurewebsites.net/edubase/downloads/public/edubasealldata20261101.csv",
+      "download_url": "https://ea-edubase-api-prod.azurewebsites.net/edubase/downloads/public/edubasealldata20261102.csv",
       "name": "Get Information About Schools",
-      "source_date": "2026-11-01"
+      "source_date": "2026-11-02"
     },
     "gias_links": {
-      "download_url": "https://ea-edubase-api-prod.azurewebsites.net/edubase/downloads/public/links_edubasealldata20261101.csv",
+      "download_url": "https://ea-edubase-api-prod.azurewebsites.net/edubase/downloads/public/links_edubasealldata20261102.csv",
       "name": "Get Information About Schools establishment links",
-      "source_date": "2026-11-01"
+      "source_date": "2026-11-02"
     },
     "ks4_benchmarks": {
       "download_url": "https://api.education.gov.uk/statistics/v1/data-sets/19e39901-560d-f972-b6f3-dd085539c095/csv",
