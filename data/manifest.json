@@ -1,6 +1,6 @@
 {
   "coverage": "England",
-  "dataset_version": "gias-2026-11-13__onspd-2026-08",
+  "dataset_version": "gias-2026-11-14__onspd-2026-08",
   "files": {
     "benchmark_history.parquet": {
       "bytes": 429121,
@@ -134,7 +134,7 @@
       "sha256": "a2fdc3559da5b49464b6f84c02158d241dd9592561931e62adc81cd012539aee"
     },
     "schools.parquet": {
-      "bytes": 5286478,
+      "bytes": 5286517,
       "columns": [
         "urn",
         "school_name",
@@ -289,8 +289,8 @@
         "pastoral_source",
         "pastoral_source_url"
       ],
-      "rows": 26477,
-      "sha256": "e4383e1346a8aa5e87888d4c55f39a24e2734118c9940f2c940d76ca6651fc11"
+      "rows": 26478,
+      "sha256": "714f2cb0c45af81ec80ecbe51aa8074dfa0a74af5cd092691383fe7d105a68c6"
     },
     "subjects.parquet": {
       "bytes": 1037294,
@@ -314,7 +314,7 @@
       "sha256": "e74d0435fa84e793675db7528586246d3b99c323d106e104108639d410a6cf15"
     }
   },
-  "generated_at": "2026-11-13T12:13:08.320234Z",
+  "generated_at": "2026-11-14T11:30:56.746578Z",
   "schema_version": 9,
   "sources": {
     "attendance_benchmarks": {
@@ -353,14 +353,14 @@
       "release_label": "EES dataset 7be58881-d49f-4e3b-b2b6-0877a1a0fe6e (latest)"
     },
     "gias": {
-      "download_url": "https://ea-edubase-api-prod.azurewebsites.net/edubase/downloads/public/edubasealldata20261113.csv",
+      "download_url": "https://ea-edubase-api-prod.azurewebsites.net/edubase/downloads/public/edubasealldata20261114.csv",
       "name": "Get Information About Schools",
-      "source_date": "2026-11-13"
+      "source_date": "2026-11-14"
     },
     "gias_links": {
-      "download_url": "https://ea-edubase-api-prod.azurewebsites.net/edubase/downloads/public/links_edubasealldata20261113.csv",
+      "download_url": "https://ea-edubase-api-prod.azurewebsites.net/edubase/downloads/public/links_edubasealldata20261114.csv",
       "name": "Get Information About Schools establishment links",
-      "source_date": "2026-11-13"
+      "source_date": "2026-11-14"
     },
     "ks4_benchmarks": {
       "download_url": "https://api.education.gov.uk/statistics/v1/data-sets/19e39901-560d-f972-b6f3-dd085539c095/csv",
